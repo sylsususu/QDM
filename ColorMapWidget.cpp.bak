@@ -1,0 +1,229 @@
+#include "ColorMapWidget.h"
+#include <CameraDataProcess.h>
+
+extern int g_Width;
+extern int g_Height;
+
+ColorMapWidget::ColorMapWidget(vector<double> B, vector<double> Bx,
+    vector<double> By, vector<double> Bz,int dimension, QWidget* parent )
+	: QWidget(parent)
+{
+	ui.setupUi(this);
+
+    magValueVec = B;
+    magValueVec_x = Bx;
+    magValueVec_y = By;
+    magValueVec_z = Bz;
+
+    m_scene_1 = new QGraphicsScene(this);
+    ui.graphicsView_1->setScene(m_scene_1);
+    m_scene_2 = new QGraphicsScene(this);
+    ui.graphicsView_2->setScene(m_scene_2);
+    m_scene_3 = new QGraphicsScene(this);
+    ui.graphicsView_3->setScene(m_scene_3);
+    m_scene_4 = new QGraphicsScene(this);
+    ui.graphicsView_4->setScene(m_scene_4);
+
+    m_image_item_1 = 0;
+    m_image_item_2 = 0;
+    m_image_item_3 = 0;
+    m_image_item_4 = 0;
+
+    ui.label_ColorCard_1->installEventFilter(this);
+    //ui.label_ColorCard_1->hide();
+    ui.label_ColorCard_2->installEventFilter(this);
+    //ui.label_ColorCard_2->hide();
+
+    dataDimension = dimension;
+    height = g_Height;
+    width = g_Width;
+    connect(ui.pushButton_ConfirmColorSetting_1, &QPushButton::clicked, this, &ColorMapWidget::drawColorMap);
+    connect(ui.pushButton_ConfirmColorSetting_2, &QPushButton::clicked, this, &ColorMapWidget::drawColorMap);
+    connect(ui.pushButton_ImportData, &QPushButton::clicked, this, &ColorMapWidget::importData);
+}
+
+ColorMapWidget::~ColorMapWidget()
+{}
+
+bool ColorMapWidget::eventFilter(QObject * obj, QEvent * event)
+{
+    if (obj == ui.label_ColorCard_1 && event->type() == QEvent::Paint)
+    {
+        ///EventFilter中的QPainter设备是需要监视的对象，不能是this父窗口
+        //QPainter painter(this);
+        QPainter painter(ui.label_ColorCard_1);
+        painter.setRenderHint(QPainter::Antialiasing);//反锯齿
+        /*int x = ui.label_ColorCard->x();
+        int y = ui.label_ColorCard->y();*/
+        int x = 0;
+        int y = 0;
+        int w = ui.label_ColorCard_1->rect().width();
+        int h = ui.label_ColorCard_1->rect().height();
+        QLinearGradient linearGradient(x, y, x, y + h);//渐变区域
+        linearGradient.setColorAt(0, Qt::red);
+        linearGradient.setColorAt(0.33, Qt::yellow);
+        linearGradient.setColorAt(0.66, Qt::green);
+        linearGradient.setColorAt(1, Qt::blue);
+        painter.setBrush(linearGradient);//设置画刷，则painter.drawRect(rect());绘制出渐变背景
+        painter.drawRect(QRect(x, y, w, h));
+    }
+    if (obj == ui.label_ColorCard_2 && event->type() == QEvent::Paint)
+    {
+        ///EventFilter中的QPainter设备是需要监视的对象，不能是this父窗口
+        //QPainter painter(this);
+        QPainter painter(ui.label_ColorCard_2);
+        painter.setRenderHint(QPainter::Antialiasing);//反锯齿
+        /*int x = ui.label_ColorCard->x();
+        int y = ui.label_ColorCard->y();*/
+        int x = 0;
+        int y = 0;
+        int w = ui.label_ColorCard_2->rect().width();
+        int h = ui.label_ColorCard_2->rect().height();
+        QLinearGradient linearGradient(x, y, x, y + h);//渐变区域
+        linearGradient.setColorAt(0, Qt::red);
+        linearGradient.setColorAt(0.33, Qt::yellow);
+        linearGradient.setColorAt(0.66, Qt::green);
+        linearGradient.setColorAt(1, Qt::blue);
+        painter.setBrush(linearGradient);//设置画刷，则painter.drawRect(rect());绘制出渐变背景
+        painter.drawRect(QRect(x, y, w, h));
+    }
+
+    return QWidget::eventFilter(obj, event);
+}
+
+void ColorMapWidget::drawColorMap()
+{
+    QPixmap pix = grab(QRect(ui.label_ColorCard_1->x(), ui.label_ColorCard_1->y(), ui.label_ColorCard_1->width(), ui.label_ColorCard_1->height()));
+    QImage image0 = pix.toImage();
+    //image0.save("img/colormap.png");
+    QImage colorImg_1 = CameraDataProcess::intChangetoQcolorimg(width / dataDimension, height / dataDimension, QVector<double>::fromStdVector(magValueVec_x),
+        ui.lineEdit_DownValue_1->text().toDouble(), ui.lineEdit_UpperValue_1->text().toDouble(), image0);
+
+    QImage imgScaled = colorImg_1.scaled(ui.graphicsView_1->width(), ui.graphicsView_1->height(), Qt::KeepAspectRatio);
+    if (m_image_item_1)
+    {
+        m_scene_1->removeItem(m_image_item_1);
+        delete m_image_item_1;
+        m_image_item_1 = 0;
+    }
+
+    m_image_item_1 = m_scene_1->addPixmap(QPixmap::fromImage(imgScaled));
+	/*m_image_item_1->setTransformationMode(Qt::SmoothTransformation);*/
+    /// //////////////////////////////////////////////////////////////////////
+
+    QImage colorImg_2 = CameraDataProcess::intChangetoQcolorimg(width / dataDimension, height / dataDimension, QVector<double>::fromStdVector(magValueVec_y),
+        ui.lineEdit_DownValue_1->text().toDouble(), ui.lineEdit_UpperValue_1->text().toDouble(), image0);
+
+    imgScaled = colorImg_2.scaled(ui.graphicsView_2->width(), ui.graphicsView_2->height(), Qt::KeepAspectRatio);
+    if (m_image_item_2)
+    {
+        m_scene_2->removeItem(m_image_item_2);
+        delete m_image_item_2;
+        m_image_item_2 = 0;
+    }
+    m_image_item_2 = m_scene_2->addPixmap(QPixmap::fromImage(imgScaled));
+    ////////////////////////////////////////////////////////////////
+    QImage colorImg_3 = CameraDataProcess::intChangetoQcolorimg(width / dataDimension, height / dataDimension, QVector<double>::fromStdVector(magValueVec_z),
+        ui.lineEdit_DownValue_1->text().toDouble(), ui.lineEdit_UpperValue_1->text().toDouble(), image0);
+
+    imgScaled = colorImg_3.scaled(ui.graphicsView_3->width(), ui.graphicsView_3->height(), Qt::KeepAspectRatio);
+    if (m_image_item_3)
+    {
+        m_scene_3->removeItem(m_image_item_3);
+        delete m_image_item_3;
+        m_image_item_3 = 0;
+    }
+    m_image_item_3 = m_scene_3->addPixmap(QPixmap::fromImage(imgScaled));
+    ///////////////////////////////////////////////////////////////////
+    QImage colorImg_4 = CameraDataProcess::intChangetoQcolorimg(width / dataDimension, height / dataDimension, QVector<double>::fromStdVector(magValueVec),
+        ui.lineEdit_DownValue_2->text().toDouble(), ui.lineEdit_UpperValue_2->text().toDouble(), image0);
+
+    imgScaled = colorImg_4.scaled(ui.graphicsView_4->width(), ui.graphicsView_4->height(), Qt::KeepAspectRatio);
+    if (m_image_item_4)
+    {
+        m_scene_4->removeItem(m_image_item_4);
+        delete m_image_item_4;
+        m_image_item_4 = 0;
+    }
+    m_image_item_4 = m_scene_4->addPixmap(QPixmap::fromImage(imgScaled));
+}
+
+void ColorMapWidget::importData()
+{
+    QVector<double> B1_Vec, B2_Vec, B3_Vec, B4_Vec;
+
+    QFile file_1("C:/Users/yedon/Desktop/MagResult/B1.dat");
+    file_1.open(QIODevice::ReadOnly);
+    QTextStream in_1(&file_1);
+    while (!in_1.atEnd())
+    {
+        B1_Vec.push_back(in_1.readLine().toDouble());
+    }
+
+    QFile file_2("C:/Users/yedon/Desktop/MagResult/B2.dat");
+    file_2.open(QIODevice::ReadOnly);
+    QTextStream in_2(&file_2);
+    while (!in_2.atEnd())
+    {
+        B2_Vec.push_back(in_2.readLine().toDouble());
+    }
+
+    QFile file_3("C:/Users/yedon/Desktop/MagResult/B3.dat");
+    file_3.open(QIODevice::ReadOnly);
+    QTextStream in_3(&file_3);
+    while (!in_3.atEnd())
+    {
+        B3_Vec.push_back(in_3.readLine().toDouble());
+    }
+
+    QFile file_4("C:/Users/yedon/Desktop/MagResult/B4.dat");
+    file_4.open(QIODevice::ReadOnly);
+    QTextStream in_4(&file_4);
+    while (!in_4.atEnd())
+    {
+        B4_Vec.push_back(in_4.readLine().toDouble());
+    }
+    double B1, B2, B3, B4, Bx, By, Bz, Bn;
+    magValueVec.clear();
+    magValueVec_x.clear();
+    magValueVec_y.clear();
+    magValueVec_z.clear();
+    for (int i = 0; i < B1_Vec.size(); i++)
+    {
+        B1 = B1_Vec[i];
+        B2 = B2_Vec[i];
+        B3 = B3_Vec[i];
+        B4 = B4_Vec[i];
+        
+        if (ui.lineEdit_1->text() == "0")
+        {
+            B1 = -B1;
+        }
+        if (ui.lineEdit_2->text() == "0")
+        {
+            B2 = -B2;
+        }
+        if (ui.lineEdit_3->text() == "0")
+        {
+            B3 = -B3;
+        }
+        if (ui.lineEdit_4->text() == "0")
+        {
+            B4 = -B4;
+        }
+
+        Bx = sqrt(3) / 4 * (B1 - B2 - B3 + B4);
+        By = sqrt(3) / 4 * (B1 + B2 - B3 - B4);
+        Bz = sqrt(3) / 4 * (B1 - B2 + B3 - B4);
+        Bn = sqrt(pow(Bx, 2) + pow(By, 2) + pow(Bz, 2));
+
+       /* Bx = sqrt(3) * (B1 + B3);
+        By = sqrt(3) * (-B2 - B3);
+        Bz = sqrt(3) * (B1 + B2);
+        Bn = sqrt(pow(Bx, 2) + pow(By, 2) + pow(Bz, 2));*/
+        magValueVec.push_back(Bn);
+        magValueVec_x.push_back(Bx);
+        magValueVec_y.push_back(By);
+        magValueVec_z.push_back(Bz);
+    }
+}

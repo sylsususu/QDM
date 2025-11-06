@@ -1,0 +1,6053 @@
+#include "QDM_Interface.h"
+
+QElapsedTimer timer3;
+
+int g_Width = 3000;
+int g_Height = 3000;
+double g_SweepFreStart = 0;
+double g_SweepFreEnd = 0;
+double g_SweepFreStep = 0;
+double g_FixedFre = 0;
+int g_IterationTime = 0;
+bool isAutoSave = false;
+int g_uiPicWidth = 580;
+int g_uiPicHeigth = 580;
+bool g_is_Binning = false;
+int g_bin = 1;
+
+bool isLockIn = false;
+
+//FL9BW相机
+TUCAM_INIT m_itApi;       // SDK API initialized object
+TUCAM_OPEN m_opCam;       // Open camera object
+TUCAM_FRAME m_frame;      // The frame object
+TUCAM_TRIGGER_ATTR m_tgr; // The trigger object
+
+//MindVision相机
+int g_hCamera = -1;                    //相机设备句柄
+unsigned char* g_pRawBuffer = NULL;     //raw数据
+unsigned char* g_pRgbBuffer = NULL;     //处理后数据缓存区
+unsigned char* g_readBuf = NULL;        //画板显示数据区
+tSdkFrameHead           g_tFrameHead;       //图像帧头信息
+tSdkCameraCapbility     g_tCapability;      //设备描述信息
+tSdkCameraDevInfo       tCameraEnumList[4];   //相机列表
+bool compareY(const point& a, const point& b) {
+	return a.y < b.y;
+}
+bool compareX(const point& a, const point& b) {
+	return a.x < b.x;
+}
+
+QDM_Interface::QDM_Interface(QWidget *parent)
+	: QDialog(parent)
+{
+
+	
+	ui.setupUi(this);
+	// 设置窗口标志位为无边框，并允许窗口移动
+	setWindowFlags(Qt::FramelessWindowHint | Qt::WindowMinimizeButtonHint | Qt::Window);
+	QThreadPool::globalInstance()->setMaxThreadCount(64);
+
+
+	waveControl = new MicrowaveSrcCtlNewProtocol(this);
+	ctuCapThread = new CtuCamCap();
+	sweepThread = new SweepMeasureThread();
+	fixFreThread = new FixMeasureThread();
+	LED = new CurrentSource();
+	motorController = new MotorController();
+	FLcamera = new camera();
+	coilX = new CurrentSource();
+	coilY = new CurrentSource();
+	coilZ = new CurrentSource();
+	/////////////////
+	m_mvCamera = new MVCamera();
+	m_mvCapThread=new MVCamCapture();
+	m_mvSweepThread=new MVCameraSweep();
+	m_mvFixFreThread=new MVCameraFix();
+
+	lightPort = new QSerialPort();
+
+	picType = 0;
+	dataDimension = 1;
+	currentIterNum = 0;
+	for (int i = 0; i < 25; i++)
+	{
+		paraNoMag.push_back(0.0);
+		paraWithMag.push_back(0.0);
+	}
+	for (int i = 0; i < 256; i++)
+	{
+		grayColourTable.append(qRgb(i, i, i));
+	}
+	connect(ui.widget, SIGNAL(mouseMove(QMouseEvent*)), this, SLOT(on_MouseMoveCustomplot(QMouseEvent*)));
+	connect(ui.graphicsView, SIGNAL(mouseMove(QMouseEvent*)), this, SLOT(on_MouseMoveGraphicsView(QMouseEvent*)));
+	/////////////////////////初始化照片显示区域////////////////////////////////////
+	m_scene = new QGraphicsScene(this);
+	ui.graphicsView->setScene(m_scene);
+	m_image_item = 0;
+	ui.label_ColorCard->installEventFilter(this);
+	ui.label_ColorCard->hide();
+	/////////////////////坐标图CustomPlot初始化显示/////////////////////////////
+	QBrush brush(QColor(6, 111, 217));
+	ui.widget->xAxis->setBasePen(QPen(brush, 2));
+	ui.widget->yAxis->setBasePen(QPen(brush, 2));
+	ui.widget->xAxis->setTickPen(QPen(brush, 2));
+	ui.widget->yAxis->setTickPen(QPen(brush, 2));
+	ui.widget->setBackground(QBrush(QColor(0, 0, 0)));
+	ui.widget->yAxis->setTickLabels(true);
+	ui.widget->xAxis->setUpperEnding(QCPLineEnding::esSpikeArrow);
+	ui.widget->yAxis->setUpperEnding(QCPLineEnding::esSpikeArrow);
+	ui.widget->xAxis->setSubTickPen(QPen(brush, 2));
+	ui.widget->yAxis->setSubTickPen(QPen(brush, 2));
+
+	QFont f;
+	f.setPixelSize(18);
+	f.setFamily("SimHei");
+	ui.widget->xAxis->setLabelFont(f);
+	ui.widget->xAxis->setLabelColor(QColor(Qt::white));
+	ui.widget->yAxis->setLabelFont(f);
+	ui.widget->yAxis->setLabelColor(QColor(Qt::white));
+	QFont f_Tick;
+	f_Tick.setPixelSize(14);
+	f_Tick.setFamily("SimHei");
+	ui.widget->xAxis->setTickLabelColor(Qt::white);
+	ui.widget->yAxis->setTickLabelColor(Qt::white);
+	ui.widget->xAxis->setTickLabelFont(f_Tick);
+	ui.widget->yAxis->setTickLabelFont(f_Tick);
+	//ui.widget->addGraph();
+	ui.widget->xAxis->setLabel("频率(GHz)");
+	ui.widget->yAxis->setLabel("灰度值");
+	ui.widget->setInteractions(QCP::iRangeZoom | QCP::Interaction::iRangeDrag | QCP::iSelectPlottables | QCP::iMultiSelect);
+
+	on_LoadData();
+
+	/////设置omp计算线程数//////////
+	int num_procs = omp_get_num_procs();
+	threadNum = num_procs/2;
+	threadNum = 32;
+	/// 设备控制界面初始化/////////// 
+	initMicroWave();
+	initCurrentCom();
+	
+	initPulse();
+	inittreeWidget();
+	// 在你的类的构造函数中安装事件过滤器
+	ui.comboBox_Current->installEventFilter(this);
+
+
+	///////////////////////////////////禁用所有按钮的键盘焦点////////////////////////////
+	QList<QWidget *> allWidgets = this->findChildren<QWidget *>();
+	for (int i = 0; i < allWidgets.size(); ++i) {
+		QPushButton *button = qobject_cast<QPushButton *>(allWidgets.at(i));
+		if (button) {
+			button->setFocusPolicy(Qt::NoFocus);
+		}
+	}
+
+	///////////////////////////////////微波信号槽////////////////////////////
+	connect(ui.pushButton_ConnectWave, &QPushButton::clicked, this, &QDM_Interface::connectWave);
+	connect(ui.radioButton_SweepFreMode, &QRadioButton::clicked, this, &QDM_Interface::setFreMode);
+	connect(ui.radioButton_FixFreMode, &QRadioButton::clicked, this, &QDM_Interface::setFreMode);
+	connect(ui.pushButton_SendWaveMode, &QPushButton::clicked, this, &QDM_Interface::sendWaveMode);
+	connect(ui.pushButton_SendSweepFre, &QPushButton::clicked, this, &QDM_Interface::sendSweepFre);
+	connect(ui.pushButton_SendFixFre, &QPushButton::clicked, this, &QDM_Interface::sendFixFre);
+	connect(ui.pushButton_StartWave, &QPushButton::clicked, this, &QDM_Interface::startWave);
+	connect(ui.pushButton_ResetWave, &QPushButton::clicked, this, &QDM_Interface::resetWave);
+	connect(waveControl, &MicrowaveSrcCtlNewProtocol::getRecSignals, this, &QDM_Interface::getWaveStatus);
+
+	///////////////////////////////////相机信号槽////////////////////////////
+	connect(ui.pushButton_ConnectCamera, &QPushButton::clicked, this, &QDM_Interface::connectCamera);
+	connect(ui.radioButton_AutoExpo, &QRadioButton::toggled, this, &QDM_Interface::setExposureMode);
+	connect(ui.lineEdit_ExposureTime, &QLineEdit::textChanged, this, &QDM_Interface::setExposureTime);
+	connect(ui.radioButton_Stander, &QRadioButton::toggled, this, &QDM_Interface::onRadioButtonToggled0);
+	connect(ui.radioButton_LowNoise14, &QRadioButton::toggled, this, &QDM_Interface::onRadioButtonToggled0);
+	connect(ui.radioButton_LowNoise16, &QRadioButton::toggled, this, &QDM_Interface::onRadioButtonToggled0);
+	connect(ui.radioButton_Gain0, &QRadioButton::toggled, this, &QDM_Interface::onRadioButtonToggledGain);
+	connect(ui.radioButton_Gain1, &QRadioButton::toggled, this, &QDM_Interface::onRadioButtonToggledGain);
+	connect(ui.radioButton_Gain2, &QRadioButton::toggled, this, &QDM_Interface::onRadioButtonToggledGain);
+	connect(ui.radioButton_Gain3, &QRadioButton::toggled, this, &QDM_Interface::onRadioButtonToggledGain);
+	connect(ui.radioButton_ContTrigger, &QRadioButton::toggled, this, &QDM_Interface::onRadioButtonToggled);
+	connect(ui.radioButton_SoftTrigger, &QRadioButton::toggled, this, &QDM_Interface::onRadioButtonToggled);
+	connect(ui.radioButton_HardTrigger, &QRadioButton::toggled, this, &QDM_Interface::onRadioButtonToggled);
+	connect(ui.pushButton_SoftTriggerOnce, &QPushButton::clicked, this, &QDM_Interface::softTriggerOnce);
+	connect(ui.pushButton_SavePic, &QPushButton::clicked, this, &QDM_Interface::savePicture);
+	connect(ui.pushButton_ChooseSavePath, &QPushButton::clicked, this, &QDM_Interface::choosePath);
+	connect(ui.checkBox_AutoSave, &QCheckBox::toggled, this, &QDM_Interface::setAutoSave);
+	connect(ui.pushButton_OpenRoiAnalysePage, &QPushButton::clicked, this, &QDM_Interface::openRoiAnalysePage);
+	connect(ui.pushButton_SetROI, &QPushButton::clicked, this, &QDM_Interface::setRoi);
+	connect(ctuCapThread, &CtuCamCap::camCap, this, &QDM_Interface::showCapImg);
+	connect(ui.pushButton_autoFindExpTime, &QPushButton::clicked, this, &QDM_Interface::autoFindExpTime);
+	connect(ctuCapThread, &CtuCamCap::getfps, this, &QDM_Interface::showFps);
+	connect(ui.lineEdit_Binning, &QLineEdit::textChanged, this, &QDM_Interface::setBinning);
+	/////////////////////////////////////////////////////////////////////////
+	connect(m_mvCapThread, &MVCamCapture::camCap, this, &QDM_Interface::showCapImg);
+	connect(m_mvCapThread, &MVCamCapture::getfps, this, &QDM_Interface::showFps);
+	connect(m_mvCapThread, &MVCamCapture::getCapTime, this, &QDM_Interface::showFps2);
+	// 创建一个验证器，限制输入为正整数
+	QIntValidator *validator0 = new QIntValidator(1, 9999, ui.lineEdit_Binning);
+	ui.lineEdit_Binning->setValidator(validator0);
+	//////////////////////////////脉冲卡信号槽//////////////////////////////////////// 
+	connect(ui.pushButton_ConnectPulse, &QPushButton::clicked, this, &QDM_Interface::connectPulse);
+	connect(ui.pushButton_OpenPulseSettingPage, &QPushButton::clicked, this, &QDM_Interface::openPulseSettingPage);
+	connect(ui.pushButton_ClearPulseManual, &QPushButton::clicked, this, &QDM_Interface::clearPulseManual);
+
+	///////////////////////////////////电机信号槽////////////////////////////
+	connect(ui.pushButton_ConnectMotor, &QPushButton::clicked, this, &QDM_Interface::connectMotor);
+	connect(ui.pushButton_FindZero, &QPushButton::clicked, this, &QDM_Interface::findZero);
+	connect(ui.pushButton_WriteLoadPos, &QPushButton::clicked, this, &QDM_Interface::recordLoadPosition);
+	connect(ui.pushButton_WriteUnloadPos, &QPushButton::clicked, this, &QDM_Interface::recordUnloadPosition);
+	connect(ui.pushButton_LoadPos, &QPushButton::clicked, this, &QDM_Interface::loadPos);
+	connect(ui.pushButton_UnlodPos, &QPushButton::clicked, this, &QDM_Interface::unloadPos);
+	connect(ui.pushButton_MotorStop, &QPushButton::clicked, this, &QDM_Interface::motorStop);
+	connect(ui.pushButton_Forward, &QPushButton::clicked, this, &QDM_Interface::motorForward);
+	connect(ui.pushButton_Backward, &QPushButton::clicked, this, &QDM_Interface::motorBackward);
+	connect(ui.pushButton_Left, &QPushButton::clicked, this, &QDM_Interface::motorLeft);
+	connect(ui.pushButton_Right, &QPushButton::clicked, this, &QDM_Interface::motorRight);
+	connect(ui.pushButton_Up, &QPushButton::clicked, this, &QDM_Interface::motorUp);
+	connect(ui.pushButton_Down, &QPushButton::clicked, this, &QDM_Interface::motorDown);
+	connect(ui.radioButton_Standard, &QRadioButton::toggled, this, &QDM_Interface::setMotorMode);
+	connect(motorController, &MotorController::stateOfMotionOk, this, &QDM_Interface::findZeroOk);
+	connect(motorController, &MotorController::getMotorPos, this, &QDM_Interface::showMotorPos);
+	connect(motorController, &MotorController::isRunX, this, &QDM_Interface::setMotorXButon);
+	connect(motorController, &MotorController::isRunY, this, &QDM_Interface::setMotorYButon);
+	connect(motorController, &MotorController::isRunZ, this, &QDM_Interface::setMotorZButon);
+
+	///////////////////////////////////LED信号槽////////////////////////////
+	//connect(ui.pushButton_ConnectCurrent, &QPushButton::clicked, this, &QDM_Interface::connectCurrent);
+	//半导体样机通过继电器控制激光及LED通断
+	connect(ui.pushButton_ConnectCurrent, &QPushButton::clicked, this, &QDM_Interface::connectLight);
+	connect(ui.pushButton_OpenLaser, &QPushButton::clicked, this, &QDM_Interface::openLaser);
+	connect(ui.pushButton_OpenLED, &QPushButton::clicked, this, &QDM_Interface::openLed);
+
+
+	connect(LED, &CurrentSource::GetCurrentAndVoltage, this, &QDM_Interface::Current);
+	connect(LED, &CurrentSource::setOutOK, this, &QDM_Interface::OutOK);
+	connect(LED, &CurrentSource::setCurrentAndVoltageOK, this, &QDM_Interface::CurrentAndVoltageOK);
+	connect(ui.pushButton_CurrentOut, &QPushButton::clicked, this, &QDM_Interface::currentOut);
+	connect(ui.pushButton_CurrentSet, &QPushButton::clicked, this, &QDM_Interface::currentSet);
+	QRegExp rx("^10(\\.0)?$|^\\d(\\.\\d)?$|^\\d(\\.\\d{1,2})?$");
+
+	QRegExpValidator *pReg = new QRegExpValidator(rx, this);
+	// 将验证器应用到 QLineEdit 中
+	ui.lineEdit_A->setValidator(pReg);
+	ui.lineEdit_V->setValidator(pReg);
+	//ui.lineEdit_PicNums->setValidator(pReg);
+	///////////////////////////////////线圈信号槽////////////////////////////
+	QRegExp rx2("^(0|[1-9]|[1-3][0-9]|4[0-8])(\\.\\d)?$");
+	QRegExpValidator *pReg2 = new QRegExpValidator(rx2, this);
+	ui.lineEdit_CoilX_V->setValidator(pReg2);
+	ui.lineEdit_CoilX_A->setValidator(pReg);
+	ui.lineEdit_CoilY_V->setValidator(pReg2);
+	ui.lineEdit_CoilY_A->setValidator(pReg);
+	ui.lineEdit_CoilZ_V->setValidator(pReg2);
+	ui.lineEdit_CoilZ_A->setValidator(pReg);
+	connect(ui.pushButton_ConnectCoilXYZ, &QPushButton::clicked, this, &QDM_Interface::connectCoilXYZ);
+	connect(ui.pushButton_CoilXSet, &QPushButton::clicked, this, &QDM_Interface::coilXSet);
+	connect(ui.pushButton_CoilXOut, &QPushButton::clicked, this, &QDM_Interface::coilXOut);
+	connect(ui.pushButton_CoilYSet, &QPushButton::clicked, this, &QDM_Interface::coilYSet);
+	connect(ui.pushButton_CoilYOut, &QPushButton::clicked, this, &QDM_Interface::coilYOut);
+	connect(ui.pushButton_CoilZSet, &QPushButton::clicked, this, &QDM_Interface::coilZSet);
+	connect(ui.pushButton_CoilZOut, &QPushButton::clicked, this, &QDM_Interface::coilZOut);
+	connect(coilX, &CurrentSource::setOutOK, this, &QDM_Interface::CoilXOutOK);
+	connect(coilX, &CurrentSource::setCurrentAndVoltageOK, this, &QDM_Interface::CoilXCurrentAndVoltageOK);
+	connect(coilY, &CurrentSource::setOutOK, this, &QDM_Interface::CoilYOutOK);
+	connect(coilY, &CurrentSource::setCurrentAndVoltageOK, this, &QDM_Interface::CoilYCurrentAndVoltageOK);
+	connect(coilZ, &CurrentSource::setOutOK, this, &QDM_Interface::CoilZOutOK);
+	connect(coilZ, &CurrentSource::setCurrentAndVoltageOK, this, &QDM_Interface::CoilZCurrentAndVoltageOK);
+	//debug
+	connect(coilX, &CurrentSource::GetCurrentAndVoltage, this, &QDM_Interface::CurrentX);
+	connect(coilY, &CurrentSource::GetCurrentAndVoltage, this, &QDM_Interface::CurrentY);
+	connect(coilZ, &CurrentSource::GetCurrentAndVoltage, this, &QDM_Interface::CurrentZ);
+	////////////////////////对比度分析相关信号槽/////////////////////////////////////////
+	connect(ui.pushButton_StartSweepMeasure, &QPushButton::clicked, this, &QDM_Interface::startSweepMeasure);
+	connect(ui.pushButton_StopSweepMeasure, &QPushButton::clicked, this, &QDM_Interface::stopSweep);
+	connect(ui.pushButton_StartFixFreMeasure, &QPushButton::clicked, this, &QDM_Interface::startFixFreMeasure);
+	connect(ui.pushButton_StopFixFreMeasure, &QPushButton::clicked, this, &QDM_Interface::stopFixFre);
+	connect(ui.pushButton_StartFixFreMeasureAllPoint, &QPushButton::clicked, this, &QDM_Interface::startAllFixFre);
+	connect(ui.checkBox_IsLockIn, &QCheckBox::toggled, this, &QDM_Interface::changeLockState);
+	
+	connect(sweepThread, &SweepMeasureThread::GetSweepData, this, &QDM_Interface::processSweepData, Qt::QueuedConnection);
+	connect(sweepThread, &SweepMeasureThread::GetPic, this, &QDM_Interface::showSweepPic, Qt::QueuedConnection);
+	connect(sweepThread, &SweepMeasureThread::stopSweepMeasure, this, &QDM_Interface::clearPulse);
+	connect(sweepThread, &SweepMeasureThread::lostPic, this, &QDM_Interface::sweepLostPic);
+	connect(sweepThread, &SweepMeasureThread::plusEnd, this, &QDM_Interface::sendPlus);
+	connect(fixFreThread, &FixMeasureThread::GetMat, this, &QDM_Interface::showFixFreImg);
+	connect(fixFreThread, &FixMeasureThread::stopFixMeasure, this, &QDM_Interface::clearPulse);
+	connect(fixFreThread, &FixMeasureThread::lostPic, this, &QDM_Interface::fixLostPic);
+	/////////////////////////////////////////////////////////////////////////////////////////////////
+	connect(m_mvSweepThread, &MVCameraSweep::GetSweepData, this, &QDM_Interface::processSweepData, Qt::QueuedConnection);
+	connect(m_mvSweepThread, &MVCameraSweep::GetSweepData2, this, &QDM_Interface::processSweepData2, Qt::QueuedConnection);
+	connect(m_mvSweepThread, &MVCameraSweep::GetPic, this, &QDM_Interface::showSweepPic, Qt::QueuedConnection);
+	connect(m_mvSweepThread, &MVCameraSweep::stopSweepMeasure, this, &QDM_Interface::clearPulse);
+	connect(m_mvSweepThread, &MVCameraSweep::lostPic, this, &QDM_Interface::sweepLostPic);
+	connect(m_mvSweepThread, &MVCameraSweep::plusEnd, this, &QDM_Interface::sendPlus);
+	connect(m_mvFixFreThread, &MVCameraFix::GetMat, this, &QDM_Interface::showFixFreImg);
+	connect(m_mvFixFreThread, &MVCameraFix::GetFixMat, this, &QDM_Interface::fastShowFixFreImg);
+	connect(m_mvFixFreThread, &MVCameraFix::stopFixMeasure, this, &QDM_Interface::clearPulse);
+	connect(m_mvFixFreThread, &MVCameraFix::lostPic, this, &QDM_Interface::fixLostPic);
+
+	////////////////////////定量分析初始参数相关信号槽/////////////////////////////////////////   
+	connect(ui.pushButton_ImportPicNoMag, &QPushButton::clicked, this, &QDM_Interface::importPicNoMag);
+	connect(ui.pushButton_ImportPicWithMag, &QPushButton::clicked, this, &QDM_Interface::importPicWithMag);
+	connect(ui.pushButton_AverODMRNoMag, &QPushButton::clicked, this, &QDM_Interface::averODMRAnalysisNoMag);
+	connect(ui.pushButton_AverODMRWithMag, &QPushButton::clicked, this, &QDM_Interface::averODMRAnalysisWithMag);
+	connect(ui.pushButton_GetInitParaNoMag, &QPushButton::clicked, this, &QDM_Interface::getInitParaNoMag);
+	connect(ui.pushButton_GetInitParaWithMag, &QPushButton::clicked, this, &QDM_Interface::getInitParaWithMag);
+	connect(ui.tableWidget_ParaNoMag, &QTableWidget::cellChanged, this, &QDM_Interface::changePara);
+	connect(ui.tableWidget_ParaWithMag, &QTableWidget::cellChanged, this, &QDM_Interface::changePara);
+	connect(ui.pushButton_ImportParaWithMag, &QPushButton::clicked, this, &QDM_Interface::importParaWithMag);
+	connect(ui.pushButton_ImportParaNoMag, &QPushButton::clicked, this, &QDM_Interface::importParaNoMag);
+	connect(ui.pushButton_SaveParaNoMag, &QPushButton::clicked, this, &QDM_Interface::saveParaNoMag);
+	connect(ui.pushButton_SaveParaWithMag, &QPushButton::clicked, this, &QDM_Interface::saveParaWithMag);
+	connect(ui.pushButton_loadNoMagData, &QPushButton::clicked, this, &QDM_Interface::loadNoMagData);
+	/////////////////////////// 定量分析综合定量分析///////////////////////////////////////
+	connect(ui.lineEdit_DataDimension, &QLineEdit::textChanged, this, &QDM_Interface::setDataDimension);
+	connect(ui.pushButton_StartAnalysisNoMag, &QPushButton::clicked, this, &QDM_Interface::startAnalysisNoMag);
+	connect(ui.pushButton_StartAnalysisWithMag, &QPushButton::clicked, this, &QDM_Interface::startAnalysisWithMag);
+	connect(ui.pushButton_StartAllAnalysis, &QPushButton::clicked, this, &QDM_Interface::startAllAnalysis);
+	connect(ui.pushButton_OpenColorMapPage, &QPushButton::clicked, this, &QDM_Interface::openColorMapPage);
+	connect(ui.radioButton_AnalysisAll, &QRadioButton::clicked, this, &QDM_Interface::setAnalysisMode);
+	connect(ui.radioButton_AnalysisSelf, &QRadioButton::clicked, this, &QDM_Interface::setAnalysisMode);
+	connect(ui.pushButton_AnalysisRoi, &QPushButton::clicked, this, &QDM_Interface::setAnalysisRoi);
+	///////////////////////灵敏度计算///////////////////////////////////////////////////
+	connect(ui.pushButton_CalParams, &QPushButton::clicked, this, &QDM_Interface::calParams);
+	connect(ui.pushButton_CalSensitivity, &QPushButton::clicked, this, &QDM_Interface::calSensitivity);
+	/////////////////////////// 按钮初始禁用///////////////////////////////////////
+	setButtonAble(false);//禁用电机按钮
+	
+	ui.pushButton_FindZero->setEnabled(false);
+	ui.pushButton_CurrentSet->setEnabled(false);
+	ui.pushButton_CurrentOut->setEnabled(false);
+	ui.pushButton_CoilXSet->setEnabled(false);
+	ui.pushButton_CoilXOut->setEnabled(false);
+	ui.pushButton_CoilYSet->setEnabled(false);
+	ui.pushButton_CoilYOut->setEnabled(false);
+	ui.pushButton_CoilZSet->setEnabled(false);
+	ui.pushButton_CoilZOut->setEnabled(false);
+	///////////////////////////主界面按钮///////////////////////////////////////
+	connect(ui.pushButton_StartAllOut, &QPushButton::clicked, this, &QDM_Interface::startAllOut);
+	connect(ui.pushButton_ClearLog, &QPushButton::clicked, this, &QDM_Interface::ClearLog);
+	// 将textEdit_Log设置为只读模式
+	ui.textEdit_Log->setReadOnly(true);
+	ui.progressBar->hide();
+	ui.lineEdit_SweepTimes->setEnabled(false);
+		
+	//灰度值显示
+	connect(ui.graphicsView, &MyGraphicsView::SendGrapViewPoint, this, &QDM_Interface::showGrayvalue);
+	grayValuetimer = new QTimer(this);
+	connect(grayValuetimer, SIGNAL(timeout()), this, SLOT(updateGrayValue()));
+
+	//对比度
+	// 设置步进为1
+	ui.contrastSlider->setSingleStep(1);
+	connect(ui.contrastSlider, &QSlider::valueChanged, this, &QDM_Interface::onContrastSliderValueChanged);
+
+	//gamma
+	ui.GammaSlider->setSingleStep(1);
+	connect(ui.GammaSlider, &QSlider::valueChanged, this, &QDM_Interface::onGammaSliderValueChanged);
+
+	//Gain
+	ui.GainSlider->setSingleStep(0.1);
+	connect(ui.GainSlider, &QSlider::valueChanged, this, &QDM_Interface::onGainSliderValueChanged);
+	connect(ui.lineEdit_Gain, &QLineEdit::textChanged, this, &QDM_Interface::onlineEditValueChanged);
+	
+	//hide
+	ui.groupBox->hide();
+	ui.groupBox_2->hide();
+
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			QTableWidgetItem* item = new QTableWidgetItem(QString::number(paraNoMag[i * 3 + j]));
+			ui.tableWidget_ParaNoMag->setItem(i, j, item);
+		}
+	}
+
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			QTableWidgetItem* item = new QTableWidgetItem(QString::number(paraWithMag[i * 3 + j]));
+			ui.tableWidget_ParaWithMag->setItem(i, j, item);
+		}
+	}
+
+}
+
+QDM_Interface::~QDM_Interface()
+{
+	if (waveControl != nullptr) {
+		delete waveControl;
+		waveControl = nullptr; // 将指针设置为 nullptr，以避免成为野指针
+	}
+
+
+	if (ctuCapThread) {
+		if (ctuCapThread->isRunning()) {
+			ctuCapThread->stop();
+			ctuCapThread->wait();
+		}
+		delete ctuCapThread;
+		ctuCapThread = nullptr;
+	}
+
+	if (sweepThread) {
+		if (sweepThread->isRunning()) {
+			sweepThread->stop();
+			sweepThread->wait();
+		}
+		delete sweepThread;
+		sweepThread = nullptr;
+	}
+
+	if (fixFreThread) {
+		if (fixFreThread->isRunning()) {
+			fixFreThread->stop();
+			fixFreThread->wait();
+		}
+		delete fixFreThread;
+		fixFreThread = nullptr;
+	}
+
+	if (m_mvCapThread) {
+		if (m_mvCapThread->isRunning()) {
+			m_mvCapThread->stop();
+			m_mvCapThread->wait();
+		}
+		delete m_mvCapThread;
+		m_mvCapThread = nullptr;
+	}
+
+	if (m_mvSweepThread) {
+		if (m_mvSweepThread->isRunning()) {
+			m_mvSweepThread->stop();
+			m_mvSweepThread->wait();
+		}
+		delete m_mvSweepThread;
+		m_mvSweepThread = nullptr;
+	}
+
+	if (m_mvFixFreThread) {
+		if (m_mvFixFreThread->isRunning()) {
+			m_mvFixFreThread->stop();
+			m_mvFixFreThread->wait();
+		}
+		delete m_mvFixFreThread;
+		m_mvFixFreThread = nullptr;
+	}
+
+
+	if (LED != nullptr) {
+		delete LED;
+		LED = nullptr;
+	}
+
+	if (motorController != nullptr) {
+		delete motorController;
+		motorController = nullptr;
+	}
+
+	if (FLcamera != nullptr) {
+		delete FLcamera;
+		FLcamera = nullptr;
+	}
+	if (m_mvCamera != nullptr) {
+		m_mvCamera->closeCamera();
+		m_mvCamera->uninitCamera();
+		delete m_mvCamera;
+		m_mvCamera = nullptr;
+	}
+	
+	if (m_scene != nullptr) {
+		delete m_scene;
+		m_scene = nullptr;
+	}
+
+	if (coilX!=nullptr)
+	{
+		delete coilX;
+		coilX = nullptr;
+	}
+
+	if (coilY != nullptr)
+	{
+		delete coilY;
+		coilY = nullptr;
+	}
+
+	if (coilZ != nullptr)
+	{
+		delete coilZ;
+		coilZ = nullptr;
+	}
+	if (ui.pushButton_ConnectPulse->text() != ("连接脉冲卡"))
+	{
+		pulseControl->pulseDisConect();
+	}
+	
+}
+
+void QDM_Interface::on_LoadData()
+{
+	QString fileName = QApplication::applicationDirPath() + QDir::separator() + "demo.txt";
+	QFile file(fileName);
+	bool isOk = file.open(QIODevice::ReadOnly);
+	ui.widget->clearGraphs();
+	QTextStream in(&file);
+	ui.widget->addGraph();
+	ui.widget->graph(0)->setPen(QPen(QColor(255, 115, 45, 255), 2));
+	int type = in.readLine().split(":", QString::SkipEmptyParts)[1].toInt();
+	QString paraStr = in.readLine();
+	QVector<float> xValue, yValue;
+	while (!in.atEnd())
+	{
+		QString line = in.readLine();
+		float x = line.split(",", QString::SkipEmptyParts)[0].toFloat();
+		float y = line.split(",", QString::SkipEmptyParts)[1].toFloat();
+		if (type != 6)
+		{
+			ui.widget->graph()->addData(x, y);
+			xValue.append(x);
+			yValue.append(y);
+		}
+		else
+		{
+			if ((int)x % 100 == 0)
+			{
+				ui.widget->graph()->addData(x, y);
+				xValue.append(x);
+				yValue.append(y);
+			}
+		}
+	}
+	auto max = std::max_element(std::begin(yValue), std::end(yValue));
+	auto min = std::min_element(std::begin(yValue), std::end(yValue));
+
+	ui.widget->yAxis->setRange((*min) * 1.1 - (*max) * 0.1, (*max) * 1.1 - (*min) * 0.1);
+	ui.widget->xAxis->setRange(xValue.first(), xValue.last());
+	ui.widget->replot();
+
+}
+
+void QDM_Interface::initMicroWave()
+{
+	/*QList<QSerialPortInfo> available_ports = QSerialPortInfo::availablePorts();
+	for (const QSerialPortInfo &port : available_ports) {
+		ui.comboBox_serialPort->addItem(port.portName() + " " + port.description());
+	}*/
+
+	ui.comboBox_serialPort->addItem("192.168.1.4:5005");
+}
+
+
+
+void QDM_Interface::initPulse()
+{
+
+}
+
+
+void QDM_Interface::inittreeWidget()
+{
+	QBrush foregroundBrush(Qt::white);
+	int red = 42;
+	int green = 41;
+	int blue = 41;
+	QColor backgroundColor = QColor::fromRgb(red, green, blue);
+	QBrush backgroundBrush(backgroundColor);
+
+	ui.treeWidget->setColumnCount(1);
+	QTreeWidgetItem *parentItem = ui.treeWidget->topLevelItem(0);
+	QTreeWidgetItem *childItem = new QTreeWidgetItem(parentItem);
+	int height = ui.groupBox_Connect->height();
+	QSize sizeHint;
+	sizeHint.setHeight(height);
+	childItem->setSizeHint(0, sizeHint);
+	ui.treeWidget->setItemWidget(childItem, 0, ui.groupBox_Connect);
+	parentItem->setForeground(0, foregroundBrush);
+	parentItem->setBackground(0, backgroundBrush);
+
+	parentItem = ui.treeWidget->topLevelItem(1);
+	QTreeWidgetItem *childItem1 = new QTreeWidgetItem(parentItem);
+	height = ui.groupBox_camera->height();
+	sizeHint.setHeight(height);
+	childItem1->setSizeHint(0, sizeHint);
+	ui.treeWidget->setItemWidget(childItem1, 0, ui.groupBox_camera);
+	parentItem->setForeground(0, foregroundBrush);
+	parentItem->setBackground(0, backgroundBrush);
+
+	parentItem = ui.treeWidget->topLevelItem(2);
+	QTreeWidgetItem *childItem2 = new QTreeWidgetItem(parentItem);
+	height = ui.groupBox_wave->height();
+	sizeHint.setHeight(height);
+	childItem2->setSizeHint(0, sizeHint);
+	ui.treeWidget->setItemWidget(childItem2, 0, ui.groupBox_wave);
+	parentItem->setForeground(0, foregroundBrush);
+	parentItem->setBackground(0, backgroundBrush);
+
+	parentItem = ui.treeWidget->topLevelItem(3);
+	QTreeWidgetItem *childItem3 = new QTreeWidgetItem(parentItem);
+	height = ui.groupBox_MT->height();
+	sizeHint.setHeight(height);
+	childItem3->setSizeHint(0, sizeHint);
+	ui.treeWidget->setItemWidget(childItem3, 0, ui.groupBox_MT);
+	parentItem->setForeground(0, foregroundBrush);
+	parentItem->setBackground(0, backgroundBrush);
+
+	parentItem = ui.treeWidget->topLevelItem(4);
+	QTreeWidgetItem *childItem4 = new QTreeWidgetItem(parentItem);
+	height = ui.groupBox_Gs->height();
+	sizeHint.setHeight(height);
+	childItem4->setSizeHint(0, sizeHint);
+	ui.treeWidget->setItemWidget(childItem4, 0, ui.groupBox_Gs);
+	parentItem->setForeground(0, foregroundBrush);
+	parentItem->setBackground(0, backgroundBrush);
+
+	parentItem = ui.treeWidget->topLevelItem(5);
+	QTreeWidgetItem *childItem5 = new QTreeWidgetItem(parentItem);
+	height = ui.groupBox_pusle->height();
+	sizeHint.setHeight(height);
+	childItem5->setSizeHint(0, sizeHint);
+	ui.treeWidget->setItemWidget(childItem5, 0, ui.groupBox_pusle);
+	parentItem->setForeground(0, foregroundBrush);
+	parentItem->setBackground(0, backgroundBrush);
+
+	parentItem = ui.treeWidget->topLevelItem(6);
+	QTreeWidgetItem *childItem6 = new QTreeWidgetItem(parentItem);
+	height = ui.groupBox_coil->height();
+	sizeHint.setHeight(height);
+	childItem6->setSizeHint(0, sizeHint);
+	ui.treeWidget->setItemWidget(childItem6, 0, ui.groupBox_coil);
+	parentItem->setForeground(0, foregroundBrush);
+	parentItem->setBackground(0, backgroundBrush);
+
+	//增加计算灵敏度的box
+	parentItem = ui.treeWidget->topLevelItem(7);
+	QTreeWidgetItem *childItem7 = new QTreeWidgetItem(parentItem);
+	height = ui.groupBox_Sensitivity->height();
+	sizeHint.setHeight(height);
+	childItem7->setSizeHint(0, sizeHint);
+	ui.treeWidget->setItemWidget(childItem7, 0, ui.groupBox_Sensitivity);
+	parentItem->setForeground(0, foregroundBrush);
+	parentItem->setBackground(0, backgroundBrush);
+
+
+	ui.treeWidget->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+	QScrollBar *verticalScrollBar = ui.treeWidget->verticalScrollBar();
+	verticalScrollBar->setSingleStep(10);
+
+	ui.treeWidget->setIndentation(0);
+
+	QObject::connect(ui.treeWidget, &QTreeWidget::itemClicked, [this](QTreeWidgetItem *item, int column) {
+		if (true) {
+
+			QPoint mousePos = QCursor::pos();
+
+
+			QMouseEvent *mouseEvent = new QMouseEvent(QEvent::MouseButtonDblClick, mousePos, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+			QCoreApplication::sendEvent(ui.treeWidget, mouseEvent);
+
+			QTreeWidgetItem *clickedItem = ui.treeWidget->itemAt(ui.treeWidget->viewport()->mapFromGlobal(mousePos));
+			if (clickedItem) {
+				ui.treeWidget->setItemSelected(clickedItem, true);
+				if (clickedItem->isExpanded()) {
+
+					ui.treeWidget->collapseItem(clickedItem);
+				}
+				else {
+
+					ui.treeWidget->expandItem(clickedItem);
+				}
+			}
+		}
+	});
+
+	ui.treeWidget->show();
+}
+
+void QDM_Interface::initCurrentCom()
+{
+	ui.comboBox_Current->clear();
+	QList<QSerialPortInfo> available_ports = QSerialPortInfo::availablePorts();
+	for (const QSerialPortInfo &port : available_ports) {
+		//port.description()
+		if (port.portName()=="COM6")
+		{
+			ui.comboBox_Current->addItem(port.portName() +" "+ "-LED");
+		}
+		else if (port.portName() == "COM17")
+		{
+			ui.comboBox_Current->addItem(port.portName() +" "+ "-XCoil" );
+		}
+		else if (port.portName() == "COM18")
+		{
+			ui.comboBox_Current->addItem(port.portName() +" "+ "-YCoil" );
+		}
+		else if (port.portName() == "COM7")
+		{
+			ui.comboBox_Current->addItem(port.portName() +" "+ "-ZCoil");
+		}
+		else
+		{
+			ui.comboBox_Current->addItem(port.portName() +" "+ port.description());
+		}
+		
+	}
+
+
+}
+
+
+void QDM_Interface::on_MouseMoveGraphicsView(QMouseEvent *event)
+{
+	//QPointF CPoint = event->pos();
+}
+
+void QDM_Interface::connectWave()
+{
+	QString itemText = ui.comboBox_serialPort->currentText();
+	QString comPort = itemText.split(" ").first();
+
+	if (ui.pushButton_ConnectWave->text() == ("连接微波"))
+	{
+		/*if (waveControl->connectToPort(comPort, 9600, QSerialPort::Data8,
+			QSerialPort::NoParity, QSerialPort::OneStop, QSerialPort::NoFlowControl))*/
+		if (waveControl->b_Connected("192.168.1.4", 5005))
+		{
+			ui.groupBox_FreMode->setEnabled(true);
+			ui.pushButton_SendWaveMode->setEnabled(true);
+			ui.groupBox_SweepFre->setEnabled(true);
+			ui.groupBox_FixFre->setEnabled(true);
+			ui.pushButton_StartWave->setEnabled(true);
+			ui.pushButton_ResetWave->setEnabled(true);
+
+			ui.pushButton_ConnectWave->setText(("断连微波"));
+			
+
+			addLogEntry("连接微波源成功!", ui.textEdit_Log);
+		}
+		else
+		{
+			waveControl->disConnect();
+			addLogEntry("连接微波源失败!", ui.textEdit_Log);
+		}
+	}
+	else
+	{
+		waveControl->disConnect();
+		ui.groupBox_FreMode->setEnabled(false);
+		ui.pushButton_SendWaveMode->setEnabled(false);
+		ui.groupBox_SweepFre->setEnabled(false);
+		ui.groupBox_FixFre->setEnabled(false);
+		ui.pushButton_StartWave->setEnabled(false);
+		ui.pushButton_ResetWave->setEnabled(false);
+		ui.pushButton_ConnectWave->setText(("连接微波"));
+	}
+
+}
+
+void QDM_Interface::setFreMode()
+{
+
+}
+void QDM_Interface::sendWaveMode()
+{
+	if (ui.radioButton_SweepFreMode->isChecked())
+	{
+		waveControl->setWorkMode(1, 1, 0, 0, 1, 1, 1);
+	}
+	else
+	{
+		waveControl->setWorkMode(0, 1, 0, 0, 1, 1, 1);
+	}
+
+}
+/// <summary>
+/// 发送扫频参数，界面起始和终止单位是GHz，步进单位KHZ,接口参数为Hz
+/// </summary>
+void QDM_Interface::sendSweepFre()
+{
+	waveControl->setSweepParameters((uint)(ui.lineEdit_StartFre->text().toDouble() * 1000000000), (uint)(ui.lineEdit_EndFre->text().toDouble() * 1000000000), ui.lineEdit_StepFre->text().toUInt() * 1000);
+	Sleep(2000);
+	waveControl->setScanNum(ui.lineEdit_SweepTimes->text().toUInt());
+
+
+}
+
+void QDM_Interface::sendFixFre()
+{
+	waveControl->setPointFrequencyParameters((uint)(ui.lineEdit_FixFre->text().toDouble() * 1000000000));
+
+}
+
+void QDM_Interface::startWave()
+{
+
+	ui.pushButton_StartWave->setEnabled(false);
+	waveControl->startOut();
+
+}
+void QDM_Interface::resetWave()
+{
+	ui.pushButton_StartWave->setEnabled(true);
+	waveControl->stopOut();
+
+}
+/*
+	 Name :
+	 Output:(int)
+		 0 : 复位成功
+		 1 : 复位失败
+		 10 : 心跳正常
+		 20 : 启动成功
+		 21 : 启动失败
+		 30 : 停止成功
+		 31 : 停止失败
+		 40 : 工作模式配置成功
+		 41 : 工作模式配置失败
+		 50 : 点频参数配置成功
+		 51 : 点频参数配置失败
+		 60 : 扫频参数配置成功
+		 61 : 扫频参数配置失败
+		 70 : 内触发频率设置成功
+		 71 : 内触发频率设置失败
+		 80 : 扫频次数配置成功
+		 81 : 扫频次数配置失败
+		 90 : 扫频中
+		 91 : 扫频完成
+		 0000 : 未知消息接收
+
+		 Other：请以信号槽方式监听
+	 */
+void QDM_Interface::getWaveStatus(int status)
+{
+	switch (status)
+	{
+	case 41:
+		addLogEntry("工作模式配置失败!", ui.textEdit_Log);
+		break;
+	case 40:
+		addLogEntry("工作模式配置成功!", ui.textEdit_Log);
+		break;
+	case 51:
+		addLogEntry("点频参数配置失败!", ui.textEdit_Log);
+		break;
+	case 61:
+		addLogEntry("扫频参数配置失败!", ui.textEdit_Log);
+		break;
+	case 81:
+		addLogEntry("扫频次数配置失败!", ui.textEdit_Log);
+		break;
+	case 80:
+		addLogEntry("扫频次数配置成功!", ui.textEdit_Log);
+		break;
+	case 60:
+		addLogEntry("扫频参数配置成功!", ui.textEdit_Log);
+		break;
+	case 50:
+		addLogEntry("点频参数配置成功!", ui.textEdit_Log);
+		break;
+	case 20:
+		addLogEntry("微波启动成功!", ui.textEdit_Log);
+		break;
+	case 21:
+		addLogEntry("微波启动失败!", ui.textEdit_Log);
+		break;
+	case 30:
+		addLogEntry("微波复位成功!", ui.textEdit_Log);
+		break;
+	case 31:
+		addLogEntry("微波复位失败!", ui.textEdit_Log);
+		break;
+	}
+}
+
+
+
+
+
+void QDM_Interface::connectCamera()
+{
+#ifdef FLCAMERA
+	if (ui.pushButton_ConnectCamera->text() == ("连接相机"))
+	{
+		FLcamera->initCamera();
+		if (!FLcamera->openCamera(0))
+		{
+			addLogEntry("连接相机失败!", ui.textEdit_Log);
+
+		}
+		else
+		{
+			addLogEntry("连接相机成功!", ui.textEdit_Log);
+			ui.groupBox_ExposureSetting->setEnabled(true);
+			ui.groupBox_TriggerSetting->setEnabled(true);
+			ui.groupBox_RoiSetting->setEnabled(true);
+			ui.lineEdit_Binning->setEnabled(true);
+			ui.GammaSlider->setEnabled(true);
+			ui.contrastSlider->setEnabled(true);
+
+			//读取对比度和gamma
+			double contrast = 0.0;
+			double gamma = 0.0;
+			FLcamera->getCameraContrast(contrast);
+			FLcamera->getCameraGamma(gamma);
+			ui.lineEdit_Gamma->setText(QString::number(gamma / 100.0));
+			ui.lineEdit_ConTrast->setText(QString::number(contrast));
+			ui.contrastSlider->setValue(contrast);
+			ui.GammaSlider->setValue(gamma);
+			//设置相机初始状态
+			FLcamera->setCameraExpMode(false);
+			FLcamera->setCameraImgMode(0);//0:标准模式 1:低噪声模式14bit 2：低噪声16bit
+			FLcamera->setCameraGain(1);
+			g_Width = 3000;
+			g_Height = 3000;
+			FLcamera->setCameraRoi(0, 0, 3000, 3000);
+			//读取相机曝光
+			double expTime = 0.0;
+			FLcamera->getCameraExpTime(expTime);
+			ui.lineEdit_ExposureTime->setText(QString::number(expTime));
+			setExposureTime(QString::number(80));
+			ui.lineEdit_ExposureTime->setText(QString::number(80));
+
+			ui.pushButton_ConnectCamera->setText(("断连相机"));
+			ui.radioButton_MannualExpo->setChecked(true);
+			ui.radioButton_HardTrigger->setChecked(true);
+			ui.lineEdit_CameraX->setText("0");
+			ui.lineEdit_CameraY->setText("0");
+			ui.lineEdit_CameraW->setText("3000");
+			ui.lineEdit_CameraH->setText("3000");
+			FLcamera->setCameraTriggerMode(2);
+			FLcamera->setCameraExpTime(ui.lineEdit_ExposureTime->text().toDouble());
+		}
+
+
+	}
+	else
+	{
+		grayValuetimer->stop();
+		FLcamera->closeCamera();
+		if (!FLcamera->uninitCamera())
+		{
+
+		}
+		ui.pushButton_ConnectCamera->setText(("连接相机"));
+		ui.groupBox_ExposureSetting->setEnabled(false);
+		ui.groupBox_TriggerSetting->setEnabled(false);
+		ui.groupBox_RoiSetting->setEnabled(false);
+		ui.lineEdit_Binning->setEnabled(false);
+		ui.GammaSlider->setEnabled(false);
+		ui.contrastSlider->setEnabled(false);
+	}
+#else
+	if (ui.pushButton_ConnectCamera->text() == ("连接相机"))
+	{
+		m_mvCamera->initCamera();
+		if (!m_mvCamera->openCamera(0))
+		{
+			addLogEntry("连接相机失败!", ui.textEdit_Log);
+
+		}
+		else
+		{
+			addLogEntry("连接相机成功!", ui.textEdit_Log);
+			ui.groupBox_ExposureSetting->setEnabled(true);
+			ui.groupBox_TriggerSetting->setEnabled(true);
+			ui.groupBox_RoiSetting->setEnabled(true);
+			ui.lineEdit_Binning->setEnabled(true);
+			ui.GammaSlider->setEnabled(true);
+			ui.contrastSlider->setEnabled(true);
+			ui.GainSlider->setEnabled(true);
+			ui.lineEdit_Gain->setEnabled(true);
+
+			//读取对比度和gamma
+			double contrast = 0.0;
+			double gamma = 0.0;
+			m_mvCamera->getCameraContrast(contrast);
+			m_mvCamera->getCameraGamma(gamma);
+			ui.lineEdit_Gamma->setText(QString::number(gamma));
+			ui.lineEdit_ConTrast->setText(QString::number(contrast));
+			ui.contrastSlider->setValue(contrast);
+			ui.GammaSlider->setValue(gamma);
+			//设置相机初始状态
+			m_mvCamera->setCameraExpMode(false);
+			m_mvCamera->setCameraGain(10);
+			int X, Y;
+			m_mvCamera->getCameraRoi(X, Y, g_Width, g_Height);
+			
+			m_mvCamera->setCameraRoi(X, Y, g_Width, g_Height);
+			//读取相机曝光
+			double expTime = 0.0;
+			m_mvCamera->getCameraExpTime(expTime);
+			ui.lineEdit_ExposureTime->setText(QString::number(expTime/1000));
+			//读取gain
+			int gain=0;
+			m_mvCamera->getCameraGain(gain);
+			ui.lineEdit_Gain->setText(QString::number(gain/10));
+			ui.GainSlider->setValue(gain/10);
+
+
+			ui.pushButton_ConnectCamera->setText(("断连相机"));
+			ui.radioButton_MannualExpo->setChecked(true);
+			ui.radioButton_HardTrigger->setChecked(true);
+			ui.lineEdit_CameraX->setText(QString::number(X));
+			ui.lineEdit_CameraY->setText(QString::number(Y));
+			ui.lineEdit_CameraW->setText(QString::number(g_Width));
+			ui.lineEdit_CameraH->setText(QString::number(g_Height));
+			m_mvCamera->setCameraTriggerMode(2);
+			m_mvCamera->setCameraExpTime(ui.lineEdit_ExposureTime->text().toDouble()*1000);
+		}
+
+
+	}
+	else
+	{
+		grayValuetimer->stop();
+		m_mvCamera->closeCamera();
+		if (!m_mvCamera->uninitCamera())
+		{
+
+		}
+		ui.pushButton_ConnectCamera->setText(("连接相机"));
+		ui.groupBox_ExposureSetting->setEnabled(false);
+		ui.groupBox_TriggerSetting->setEnabled(false);
+		ui.groupBox_RoiSetting->setEnabled(false);
+		ui.lineEdit_Binning->setEnabled(false);
+		ui.GammaSlider->setEnabled(false);
+		ui.contrastSlider->setEnabled(false);
+		ui.GainSlider->setEnabled(false);
+		ui.lineEdit_Gain->setEnabled(false);
+	}
+#endif
+	
+
+}
+
+void QDM_Interface::setExposureMode(bool)
+{
+#ifdef FLCAMERA
+	if (ui.radioButton_AutoExpo->isChecked())
+	{
+		FLcamera->setCameraExpMode(true);
+		ui.lineEdit_ExposureTime->setEnabled(false);
+
+	}
+	else
+	{
+		FLcamera->setCameraExpMode(false);
+		ui.lineEdit_ExposureTime->setEnabled(true);
+	}
+#else
+	if (ui.radioButton_AutoExpo->isChecked())
+	{
+		m_mvCamera->setCameraExpMode(true);
+		ui.lineEdit_ExposureTime->setEnabled(false);
+
+	}
+	else
+	{
+		m_mvCamera->setCameraExpMode(false);
+		ui.lineEdit_ExposureTime->setEnabled(true);
+	}
+#endif
+	
+
+}
+
+void QDM_Interface::setExposureTime(QString time)
+{
+#ifdef FLCAMERA
+	FLcamera->setCameraExpTime(ui.lineEdit_ExposureTime->text().toDouble());
+#else
+	m_mvCamera->setCameraExpTime(ui.lineEdit_ExposureTime->text().toDouble()*1000);
+#endif
+	
+
+}
+
+
+
+void QDM_Interface::setTriggerMode()
+{
+#ifdef FLCAMERA
+	if (ui.radioButton_ContTrigger->isChecked())
+	{
+		if (FLcamera->setCameraTriggerMode(0))
+		{
+			grayValuetimer->start(100); // 100ms触发一次定时器
+
+			ctuCapThread->start();
+			ctuCapThread->stream();
+			ui.pushButton_SoftTriggerOnce->setEnabled(false);
+		}
+
+	}
+	else if (ui.radioButton_SoftTrigger->isChecked())
+	{
+		ctuCapThread->stop();
+		grayValuetimer->stop();
+		Sleep(200);
+		if (FLcamera->setCameraTriggerMode(1))
+		{
+
+			ui.pushButton_SoftTriggerOnce->setEnabled(true);
+		}
+
+
+	}
+	else
+	{
+		ctuCapThread->stop();
+		grayValuetimer->stop();
+		Sleep(200);
+		if (FLcamera->setCameraTriggerMode(2))
+		{
+
+			ui.pushButton_SoftTriggerOnce->setEnabled(false);
+		}
+
+	}
+#else
+	
+	if (ui.radioButton_ContTrigger->isChecked())
+	{
+		if (m_mvCamera->setCameraTriggerMode(0))
+		{
+			grayValuetimer->start(100); // 100ms触发一次定时器
+
+			m_mvCapThread->start();
+			m_mvCapThread->stream();
+			ui.pushButton_SoftTriggerOnce->setEnabled(false);
+		}
+
+	}
+	else if (ui.radioButton_SoftTrigger->isChecked())
+	{
+		m_mvCapThread->stop();
+		grayValuetimer->stop();
+		Sleep(200);
+		if (m_mvCamera->setCameraTriggerMode(1))
+		{
+
+			ui.pushButton_SoftTriggerOnce->setEnabled(true);
+		}
+
+
+	}
+	else
+	{
+		m_mvCapThread->stop();
+		grayValuetimer->stop();
+		Sleep(200);
+		if (m_mvCamera->setCameraTriggerMode(2))
+		{
+
+			ui.pushButton_SoftTriggerOnce->setEnabled(false);
+		}
+
+	}
+#endif
+	
+
+}
+
+void QDM_Interface::softTriggerOnce()
+{
+
+	
+#ifdef FLCAMERA
+	cv::Mat mat;
+	mat = FLcamera->cameraSoftTriggerOnce();
+
+	QImage image(mat.data, mat.cols, mat.rows, mat.step, QImage::Format_Grayscale8);
+	QImage imgScaled = image.scaled(ui.graphicsView->width(), ui.graphicsView->height());
+	if (m_image_item)
+	{
+		m_scene->removeItem(m_image_item);
+		delete m_image_item;
+		m_image_item = 0;
+	}
+	m_image_item = m_scene->addPixmap(QPixmap::fromImage(imgScaled));
+	grayImg = image;
+	addLogEntry("软触发一次!", ui.textEdit_Log);
+#else
+
+	QImage image = m_mvCamera->cameraSoftTriggerOnce();
+	QImage imgScaled = image.scaled(ui.graphicsView->width(), ui.graphicsView->height());
+	if (m_image_item)
+	{
+		m_scene->removeItem(m_image_item);
+		delete m_image_item;
+		m_image_item = 0;
+	}
+	m_image_item = m_scene->addPixmap(QPixmap::fromImage(imgScaled));
+	grayImg = image;
+	addLogEntry("软触发一次!", ui.textEdit_Log);
+#endif
+	
+
+}
+
+void QDM_Interface::choosePath()
+{
+	QString dirName = QFileDialog::getExistingDirectory(this, ("选择保存目录"), "", QFileDialog::Option::ShowDirsOnly);
+	if (dirName.isNull())
+	{
+		return;
+	}
+	ui.lineEdit_SavePath->setText(dirName);
+}
+
+void QDM_Interface::savePicture()
+{
+	if (ui.lineEdit_SavePath->text() == "")
+	{
+
+
+		addLogEntry("未选择保存路径!", ui.textEdit_Log);
+		return;
+	}
+	else
+	{
+		QString path = ui.lineEdit_SavePath->text();
+		m_image_item->pixmap().save(path + "/" + QDateTime::currentDateTime().toString("hh_mm_ss.png"));
+
+	}
+
+}
+
+void QDM_Interface::setAutoSave()
+{
+	if (ui.checkBox_AutoSave->isChecked())
+	{
+		if (ui.lineEdit_SavePath->text() == "")
+		{
+
+			addLogEntry("未选择保存路径!", ui.textEdit_Log);
+			ui.checkBox_AutoSave->setChecked(false);
+			return;
+		}
+		else
+		{
+			ui.pushButton_SavePic->setEnabled(false);
+			isAutoSave = true;
+		}
+	}
+	else
+	{
+		ui.pushButton_SavePic->setEnabled(true);
+		isAutoSave = false;
+	}
+
+}
+
+void QDM_Interface::setRoi()
+{
+	int x = ui.lineEdit_CameraX->text().toInt();
+	int y = ui.lineEdit_CameraY->text().toInt();
+	int w = ui.lineEdit_CameraW->text().toInt();
+	int h = ui.lineEdit_CameraH->text().toInt();
+
+	if (x < 0)
+	{
+		x = 0;
+	}
+	if (y < 0)
+	{
+		y = 0;
+	}
+	if (w < 0)
+	{
+		w = 0;
+	}
+	if (h < 0)
+	{
+		h = 0;
+	}
+	//。设置的水平偏移量、垂直偏移量、宽度和高度必须为 4 的倍数。
+	if (x % 4 != 0)
+	{
+		int scalesize = x / 4;
+		x = scalesize * 4;
+		QString strx = QString::number(x);
+		ui.lineEdit_CameraX->setText(strx);
+	}
+	if (y % 4 != 0)
+	{
+		int scalesize = y / 4;
+		y = scalesize * 4;
+		QString stry = QString::number(y);
+		ui.lineEdit_CameraY->setText(stry);
+	}
+	if (w % 4 != 0)
+	{
+		int scalesize = w / 16;
+		w = scalesize * 16;
+		QString strw = QString::number(w);
+		ui.lineEdit_CameraW->setText(strw);
+	}
+	if (h % 4 != 0)
+	{
+		int scalesize = h / 16;
+		h = scalesize * 16;
+		QString strh = QString::number(h);
+		ui.lineEdit_CameraH->setText(strh);
+	}
+
+	g_Width = w;
+	g_Height = h;
+	qDebug() << "g_Height"<<g_Width;
+	qDebug() << "g_Height"<<g_Height;
+	
+#ifdef FLCAMERA
+	if (FLcamera->setCameraRoi(x, y, w, h))
+	{
+		addLogEntry("设置ROI成功!", ui.textEdit_Log);
+	}
+	else
+	{
+		addLogEntry("设置ROI失败!", ui.textEdit_Log);
+	}
+#else
+	if (m_mvCamera->setCameraRoi(x, y, w, h))
+	{
+		addLogEntry("设置ROI成功!", ui.textEdit_Log);
+	}
+	else
+	{
+		addLogEntry("设置ROI失败!", ui.textEdit_Log);
+	}
+#endif
+	
+	
+	
+}
+
+void QDM_Interface::showCapImg(cv::Mat showMat)
+{
+	grayMat = showMat.clone();
+	cv::Mat resizedImage;
+	cv::resize(showMat, resizedImage, cv::Size(g_uiPicWidth, g_uiPicHeigth)); // 缩放输入图像到指定的大小
+#pragma omp parallel for num_threads(32)
+	for (int i = 0; i < resizedImage.rows; i++) {
+		ushort* ptr = resizedImage.ptr<ushort>(i);
+		for (int j = 0; j < resizedImage.cols; j++) {
+			ptr[j] /= 16.0;
+		}
+	}
+	resizedImage.convertTo(resizedImage, CV_8U);
+	cv::Mat tmp = resizedImage;
+
+	
+	QImage img(tmp.data, tmp.cols, tmp.rows, tmp.step, QImage::Format_Grayscale8);
+	if (m_image_item)
+	{
+		m_scene->removeItem(m_image_item);
+		delete m_image_item;
+		m_image_item = 0;
+	}
+	m_image_item = m_scene->addPixmap(QPixmap::fromImage(img));
+}
+
+void QDM_Interface::autoFindExpTime()
+{
+#ifdef FLCAMERA
+	addLogEntry("自动寻找曝光!", ui.textEdit_Log);
+	for (int i = 0; i < 1000; i++)
+	{
+		cv::Mat mat;
+		FLcamera->setCameraExpTime(double(i));
+		FLcamera->setCameraTriggerMode(1);
+		mat = FLcamera->cameraSoftTriggerOnce();
+
+
+		double minVal, maxVal;
+		cv::Point minLoc, maxLoc;
+		cv::minMaxLoc(mat, &minVal, &maxVal, &minLoc, &maxLoc);
+
+
+		double exposureTime = 1.0f;
+		if (FLcamera->getCameraExpTime(exposureTime))
+		{
+			ui.lineEdit_ExposureTime->setText(QString::number(exposureTime));
+		}
+
+		if (maxVal >= 0.95 * 255)
+		{
+			break;
+			addLogEntry("自动寻找曝光成功!", ui.textEdit_Log);
+		}
+		update();
+	}
+#else
+	addLogEntry("自动寻找曝光!", ui.textEdit_Log);
+	for (int i = 0; i < 1000; i++)
+	{
+		
+		m_mvCamera->setCameraExpTime(double(i)*1000);
+		m_mvCamera->setCameraTriggerMode(1);
+		QImage img = m_mvCamera->cameraSoftTriggerOnce();
+
+
+		// 获取图像的宽度和高度
+		int width = img.width();
+		int height = img.height();
+
+		// 初始化最大像素值为0
+		int maxPixelValue = 0;
+
+		// 遍历图像的所有像素
+		for (int y = 0; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				// 获取当前像素的颜色值
+				QRgb pixel = img.pixel(x, y);
+
+				// 计算当前像素的灰度值
+				int grayValue = qGray(pixel);
+
+				// 更新最大像素值
+				if (grayValue > maxPixelValue) {
+					maxPixelValue = grayValue;
+				}
+			}
+		}
+
+
+		double exposureTime = 1.0f;
+		if (m_mvCamera->getCameraExpTime(exposureTime))
+		{
+			ui.lineEdit_ExposureTime->setText(QString::number(exposureTime/1000));
+		}
+
+		if (maxPixelValue >= 0.95 * 255)
+		{
+			break;
+			addLogEntry("自动寻找曝光成功!", ui.textEdit_Log);
+		}
+		update();
+	}
+#endif
+	
+
+}
+
+void QDM_Interface::showFps()
+{
+
+	time_t end = clock();
+	double duration = (double)(end - ts) / CLOCKS_PER_SEC;
+	ts = clock();
+
+	if (duration == 0)
+	{
+
+		ui.label_CamFps->setText("0");
+	}
+	else
+	{
+
+		QString text = QString::number(1 / duration);
+		ui.label_CamFps->setText(text);
+	}
+#ifdef FLCAMERA
+	//自动曝光打开，更新相机曝光值
+	if (ui.radioButton_AutoExpo->isChecked())
+	{
+		double exposureTime = 1.0f;
+		if (FLcamera->getCameraExpTime(exposureTime));
+		ui.lineEdit_ExposureTime->setText(QString::number(exposureTime));
+	}
+#else
+	if (ui.radioButton_AutoExpo->isChecked())
+	{
+		double exposureTime = 1.0f;
+		if (m_mvCamera->getCameraExpTime(exposureTime));
+		ui.lineEdit_ExposureTime->setText(QString::number(exposureTime/1000));
+	}
+#endif
+
+}
+
+void QDM_Interface::showFps2(double t)
+{
+
+	if (t == 0)
+	{
+
+		ui.label_CamFps->setText("0");
+	}
+	QString text = QString::number(1 / t);
+	ui.label_CamFps->setText(text);
+#ifdef FLCAMERA
+	//自动曝光打开，更新相机曝光值
+	if (ui.radioButton_AutoExpo->isChecked())
+	{
+		double exposureTime = 1.0f;
+		if (FLcamera->getCameraExpTime(exposureTime));
+		ui.lineEdit_ExposureTime->setText(QString::number(exposureTime));
+	}
+#else
+	if (ui.radioButton_AutoExpo->isChecked())
+	{
+		double exposureTime = 1.0f;
+		if (m_mvCamera->getCameraExpTime(exposureTime));
+		ui.lineEdit_ExposureTime->setText(QString::number(exposureTime / 1000));
+	}
+#endif
+}
+
+void QDM_Interface::saveImage(const cv::Mat & image, const std::string & filename)
+{
+	SaveThread saveThread(image, filename);
+	std::thread threadObj(saveThread);
+	threadObj.detach();
+}
+
+void QDM_Interface::setBinning()
+{
+	
+	int bin=ui.lineEdit_Binning->text().toInt();
+	
+	if (bin<=1)
+	{
+		g_is_Binning = false;
+		return;
+	}
+	else
+	{
+		g_is_Binning = true;
+		g_bin = bin;
+	}
+	
+	
+}
+
+void QDM_Interface::setCapMode()
+{
+#ifdef FLCAMERA
+	if (ui.radioButton_Stander->isChecked())
+	{
+		FLcamera->setCameraImgMode(0);//0:标准模式 1:低噪声模式14bit 2：低噪声16bit
+
+	}
+	else if (ui.radioButton_LowNoise14->isChecked())
+	{
+		FLcamera->setCameraImgMode(1);//0:标准模式 1:低噪声模式14bit 2：低噪声16bit
+
+	}
+	else if (ui.radioButton_LowNoise16->isChecked())
+	{
+		FLcamera->setCameraImgMode(2);//0:标准模式 1:低噪声模式14bit 2：低噪声16bit
+
+	}
+#endif // FLCAMERA
+
+	
+}
+
+void QDM_Interface::setGain()
+{
+#ifdef FLCAMERA
+	if (ui.radioButton_Gain0->isChecked())
+	{
+		FLcamera->setCameraGain(0);
+	}
+	else if (ui.radioButton_Gain1->isChecked())
+	{
+		FLcamera->setCameraGain(1);
+	}
+	else if (ui.radioButton_Gain2->isChecked())
+	{
+		FLcamera->setCameraGain(2);
+	}
+	else if (ui.radioButton_Gain3->isChecked())
+	{
+		FLcamera->setCameraGain(3);
+	}
+#endif
+}
+
+void QDM_Interface::onContrastSliderValueChanged()
+{
+#ifdef FLCAMERA
+	ui.contrastSlider->setRange(0, 255);
+	int contrast = ui.contrastSlider->value();
+	FLcamera->setCameraContrast(contrast);
+	ui.lineEdit_ConTrast->setText(QString::number(contrast));
+#else
+	ui.contrastSlider->setRange(0, 200);
+	int contrast = ui.contrastSlider->value();
+	m_mvCamera->setCameraContrast(contrast);
+	ui.lineEdit_ConTrast->setText(QString::number(contrast));
+#endif // FLCAMERA
+
+	
+}
+
+void QDM_Interface::onGammaSliderValueChanged()
+{
+	
+
+#ifdef FLCAMERA
+	ui.GammaSlider->setRange(0, 255);
+	int gamma = ui.GammaSlider->value();
+	FLcamera->setCameraGamma(gamma);
+	ui.lineEdit_Gamma->setText(QString::number(gamma / 100.0));
+#else
+	ui.GammaSlider->setRange(0, 250);
+	int gamma = ui.GammaSlider->value();
+	m_mvCamera->setCameraGamma(gamma);
+	ui.lineEdit_Gamma->setText(QString::number(gamma));
+#endif // FLCAMERA
+	
+	
+}
+
+void QDM_Interface::onGainSliderValueChanged()
+{
+#ifdef FLCAMERA
+	
+#else
+	ui.GainSlider->setRange(1, 250);
+	float gain = ui.GainSlider->value();
+	int i_gain = gain * 10;
+	m_mvCamera->setCameraGain(i_gain);
+	ui.lineEdit_Gain->setText(QString::number(gain));
+#endif // FLCAMERA
+}
+
+void QDM_Interface::onlineEditValueChanged()
+{
+	float gain = ui.lineEdit_Gain->text().toFloat();
+	int i_gain = gain * 10;
+	m_mvCamera->setCameraGain(i_gain);
+	ui.GainSlider->setValue(i_gain / 10);
+}
+
+
+
+
+
+
+void QDM_Interface::openPulseSettingPage()
+{
+
+	PulseSet* pulseSettingPage = new PulseSet();
+	pulseSettingPage->show();
+
+	connect(pulseSettingPage, &PulseSet::GetPulseParam, this, &QDM_Interface::SetPulseParam);
+	connect(pulseSettingPage, &PulseSet::GetPulseTimesParam, this, &QDM_Interface::SetPulseTimesParam);
+	addLogEntry("打开脉冲设置界面!", ui.textEdit_Log);
+}
+
+void QDM_Interface::clearPulseManual()
+{
+	ui.pushButton_StartWave->setEnabled(true);
+	if (pulseControl->pulseConnect())
+	{
+		pulseControl->clearPulse();
+		addLogEntry("停止脉冲!", ui.textEdit_Log);
+
+	}
+	else
+	{
+		addLogEntry("连接脉冲卡失败!", ui.textEdit_Log);
+	}
+
+}
+
+void QDM_Interface::SetPulseParam(int cycleTime, int pulseNumbers, QVector<float> A0, QVector<float> A1, QVector<float> A2)
+{
+	is_SetPulseParamOk = true;
+	pulse_cycleTime = cycleTime;
+	pulse_pulseNumbers = pulseNumbers;
+	pulse_A0 = A0;
+	pulse_A1 = A1;
+	pulse_A2 = A2;
+
+}
+
+void QDM_Interface::SetPulseTimesParam(int startTime0_0, int ctuTime0_0, int startTime1_0, int ctuTime1_0, int startTime1_1, int ctuTime1_1, int startTime2_0, int ctuTime2_0)
+{
+	//脉冲起点
+	pulse_startTime0_0 = startTime0_0;
+	//脉冲持续
+	pulse_ctuTime0_0 = ctuTime0_0;
+	//相机起点0
+	pulse_startTime1_0 = startTime1_0;
+	//相机起点1
+	pulse_startTime1_1 = startTime1_1;
+	//相机持续0
+	pulse_ctuTime1_0 = ctuTime1_0;
+	//相机持续1
+	pulse_ctuTime1_1 = ctuTime1_1;
+	//微波开关起点
+	pulse_startTime2_0 = startTime2_0;
+	//微波开关持续
+	pulse_ctuTime2_0 = ctuTime2_0;
+}
+
+
+
+void QDM_Interface::connectPulse()
+{
+	if (ui.pushButton_ConnectPulse->text() == ("连接脉冲卡"))
+	{
+		if (pulseControl->pulseConnect())
+		{
+			addLogEntry("连接脉冲卡成功!", ui.textEdit_Log);
+			ui.pushButton_ConnectPulse->setText(("断连脉冲卡"));
+			is_ConnectPuls = true;
+		}
+		else
+		{
+			addLogEntry("连接脉冲卡失败!", ui.textEdit_Log);
+			is_ConnectPuls = false;
+		}
+
+	}
+	else
+	{
+		pulseControl->pulseDisConect();
+		ui.pushButton_ConnectPulse->setText(("连接脉冲卡"));
+		is_ConnectPuls = false;
+	}
+
+
+}
+
+
+
+void QDM_Interface::connectMotor()
+{
+	if (ui.pushButton_ConnectMotor->text() == ("连接电机"))
+	{
+		isFindZero = false;
+		if (motorController->connectMotor())
+		{
+			setButtonAble(true);
+			addLogEntry("连接位移台成功!", ui.textEdit_Log);
+			ui.pushButton_FindZero->setEnabled(true);
+			ui.pushButton_ConnectMotor->setText(("断连电机"));
+		}
+		else
+		{
+			ui.pushButton_FindZero->setEnabled(false);
+			setButtonAble(false);//禁用电机按钮
+			addLogEntry("连接位移台失败!", ui.textEdit_Log);
+		}
+	}
+	else
+	{
+		motorController->disconnectMotor();
+		ui.pushButton_FindZero->setEnabled(false);
+		setButtonAble(false);//禁用电机按钮
+		ui.pushButton_ConnectMotor->setText(("连接电机"));
+	}
+
+
+}
+
+void QDM_Interface::findZero()
+{
+	//电机负方向找零
+	motorController->findZero();
+
+}
+
+void QDM_Interface::recordLoadPosition()
+{
+	motorController->writeP0();
+	addLogEntry("记录上料位置成功!", ui.textEdit_Log);
+}
+
+void QDM_Interface::recordUnloadPosition()
+{
+	motorController->writeP1();
+	addLogEntry("记录下料位置成功!", ui.textEdit_Log);
+}
+
+void QDM_Interface::loadPos()
+{
+	motorController->load();
+	addLogEntry("上料!", ui.textEdit_Log);
+}
+
+void QDM_Interface::unloadPos()
+{
+	motorController->unload();
+	addLogEntry("下料!", ui.textEdit_Log);
+}
+
+void QDM_Interface::motorStop()
+{
+	motorController->stop();
+	addLogEntry("急停!", ui.textEdit_Log);
+}
+
+void QDM_Interface::motorForward()
+{
+	float d = ui.lineEdit_RelativeDistance->text().toFloat();
+	//距离转换成脉冲
+	int pulse = d * motorController->value(YAxis);
+	if (ui.radioButton_Standard->isChecked())
+	{
+		motorController->forward(Standard, pulse);
+	}
+	else
+	{
+		motorController->forward(FineTuning, pulse);
+	}
+	
+}
+
+void QDM_Interface::motorBackward()
+{
+	float d = ui.lineEdit_RelativeDistance->text().toFloat();
+	//距离转换成脉冲
+	int pulse = d * motorController->value(YAxis);
+	if (ui.radioButton_Standard->isChecked())
+	{
+		motorController->backward(Standard, pulse);
+	}
+	else
+	{
+		motorController->backward(FineTuning, pulse);
+	}
+	
+}
+
+void QDM_Interface::motorLeft()
+{
+	float d = ui.lineEdit_RelativeDistance->text().toFloat();
+	//距离转换成脉冲
+	int pulse = d * motorController->value(XAxis);
+	if (ui.radioButton_Standard->isChecked())
+	{
+		motorController->left(Standard, pulse);
+	}
+	else
+	{
+		motorController->left(FineTuning, pulse);
+	}
+	
+}
+
+void QDM_Interface::motorRight()
+{
+	float d = ui.lineEdit_RelativeDistance->text().toFloat();
+	//距离转换成脉冲
+	int pulse = d * motorController->value(XAxis);
+	if (ui.radioButton_Standard->isChecked())
+	{
+		motorController->right(Standard, pulse);
+	}
+	else
+	{
+		motorController->right(FineTuning, pulse);
+	}
+	
+}
+
+void QDM_Interface::motorUp()
+{
+	float d = ui.lineEdit_RelativeDistance->text().toFloat();
+	//距离转换成脉冲
+	int pulse = d * motorController->value(ZAxis);
+	if (ui.radioButton_Standard->isChecked())
+	{
+		motorController->up(Standard, pulse);
+	}
+	else
+	{
+		motorController->up(FineTuning, pulse);
+	}
+	
+}
+
+void QDM_Interface::motorDown()
+{
+	float d = ui.lineEdit_RelativeDistance->text().toFloat();
+	//距离转换成脉冲
+	int pulse = d * motorController->value(ZAxis);
+	if (ui.radioButton_Standard->isChecked())
+	{
+		motorController->down(Standard, pulse);
+	}
+	else
+	{
+		motorController->down(FineTuning, pulse);
+	}
+	
+}
+
+void QDM_Interface::setMotorMode()
+{
+	if (ui.radioButton_Standard->isChecked())
+	{
+
+		disconnect(ui.pushButton_Forward, &QPushButton::pressed, this, &QDM_Interface::motorForward);
+		disconnect(ui.pushButton_Backward, &QPushButton::pressed, this, &QDM_Interface::motorBackward);
+		disconnect(ui.pushButton_Left, &QPushButton::pressed, this, &QDM_Interface::motorLeft);
+		disconnect(ui.pushButton_Right, &QPushButton::pressed, this, &QDM_Interface::motorRight);
+		disconnect(ui.pushButton_Up, &QPushButton::pressed, this, &QDM_Interface::motorUp);
+		disconnect(ui.pushButton_Down, &QPushButton::pressed, this, &QDM_Interface::motorDown);
+
+
+		disconnect(ui.pushButton_Forward, &QPushButton::released, this, &QDM_Interface::motorSlowStop);
+		disconnect(ui.pushButton_Backward, &QPushButton::released, this, &QDM_Interface::motorSlowStop);
+		disconnect(ui.pushButton_Left, &QPushButton::released, this, &QDM_Interface::motorSlowStop);
+		disconnect(ui.pushButton_Right, &QPushButton::released, this, &QDM_Interface::motorSlowStop);
+		disconnect(ui.pushButton_Up, &QPushButton::released, this, &QDM_Interface::motorSlowStop);
+		disconnect(ui.pushButton_Down, &QPushButton::released, this, &QDM_Interface::motorSlowStop);
+
+		connect(ui.pushButton_Forward, &QPushButton::clicked, this, &QDM_Interface::motorForward);
+		connect(ui.pushButton_Backward, &QPushButton::clicked, this, &QDM_Interface::motorBackward);
+		connect(ui.pushButton_Left, &QPushButton::clicked, this, &QDM_Interface::motorLeft);
+		connect(ui.pushButton_Right, &QPushButton::clicked, this, &QDM_Interface::motorRight);
+		connect(ui.pushButton_Up, &QPushButton::clicked, this, &QDM_Interface::motorUp);
+		connect(ui.pushButton_Down, &QPushButton::clicked, this, &QDM_Interface::motorDown);
+
+	}
+	else
+	{
+
+		disconnect(ui.pushButton_Forward, &QPushButton::clicked, this, &QDM_Interface::motorForward);
+		disconnect(ui.pushButton_Backward, &QPushButton::clicked, this, &QDM_Interface::motorBackward);
+		disconnect(ui.pushButton_Left, &QPushButton::clicked, this, &QDM_Interface::motorLeft);
+		disconnect(ui.pushButton_Right, &QPushButton::clicked, this, &QDM_Interface::motorRight);
+		disconnect(ui.pushButton_Up, &QPushButton::clicked, this, &QDM_Interface::motorUp);
+		disconnect(ui.pushButton_Down, &QPushButton::clicked, this, &QDM_Interface::motorDown);
+
+
+		connect(ui.pushButton_Forward, &QPushButton::pressed, this, &QDM_Interface::motorForward);
+		connect(ui.pushButton_Backward, &QPushButton::pressed, this, &QDM_Interface::motorBackward);
+		connect(ui.pushButton_Left, &QPushButton::pressed, this, &QDM_Interface::motorLeft);
+		connect(ui.pushButton_Right, &QPushButton::pressed, this, &QDM_Interface::motorRight);
+		connect(ui.pushButton_Up, &QPushButton::pressed, this, &QDM_Interface::motorUp);
+		connect(ui.pushButton_Down, &QPushButton::pressed, this, &QDM_Interface::motorDown);
+
+
+		connect(ui.pushButton_Forward, &QPushButton::released, this, &QDM_Interface::motorSlowStop);
+		connect(ui.pushButton_Backward, &QPushButton::released, this, &QDM_Interface::motorSlowStop);
+		connect(ui.pushButton_Left, &QPushButton::released, this, &QDM_Interface::motorSlowStop);
+		connect(ui.pushButton_Right, &QPushButton::released, this, &QDM_Interface::motorSlowStop);
+		connect(ui.pushButton_Up, &QPushButton::released, this, &QDM_Interface::motorSlowStop);
+		connect(ui.pushButton_Down, &QPushButton::released, this, &QDM_Interface::motorSlowStop);
+
+
+	}
+}
+
+void QDM_Interface::motorSlowStop()
+{
+	motorController->onStopV();
+}
+
+void QDM_Interface::findZeroOk()
+{
+	addLogEntry("找零点成功!", ui.textEdit_Log);
+	isFindZero = true;
+	setButtonAble(isFindZero);
+}
+
+void QDM_Interface::showMotorPos(int pos_x, int pos_y, int pos_z)
+{
+	float x = static_cast<float>(pos_x) / static_cast<float>(motorController->value(XAxis));
+	float y = static_cast<float>(pos_y) / static_cast<float>(motorController->value(YAxis));
+	float z = static_cast<float>(pos_z) / static_cast<float>(motorController->value(ZAxis));
+	QString QStr_x = QString::number(x);
+	QString QStr_y = QString::number(y);
+	QString QStr_z = QString::number(z);
+	QString text = "X: %1,Y:%2,Z:%3";
+	ui.label_MotorPos->setText(text.arg(QStr_x).arg(QStr_y).arg(QStr_z));
+
+
+}
+
+void QDM_Interface::setMotorXButon(bool isRun)
+{
+	if (isFindZero)//找零完成后
+	{
+		if (ui.radioButton_Standard->isChecked())//标准模式
+		{
+			if (isRun)//电机运动时
+			{
+				ui.pushButton_Left->setEnabled(false); // 禁用按钮
+				ui.pushButton_Right->setEnabled(false); // 禁用按钮
+			}
+			else
+			{
+				ui.pushButton_Left->setEnabled(true);
+				ui.pushButton_Right->setEnabled(true);
+			}
+		}
+		else
+		{
+			ui.pushButton_Left->setEnabled(true);
+			ui.pushButton_Right->setEnabled(true);
+		}
+	}
+
+
+}
+
+void QDM_Interface::setMotorYButon(bool isRun)
+{
+	if (isFindZero)//找零完成后
+	{
+		if (ui.radioButton_Standard->isChecked())
+		{
+			if (isRun)
+			{
+				ui.pushButton_Forward->setEnabled(false); // 禁用按钮
+				ui.pushButton_Backward->setEnabled(false); // 禁用按钮
+			}
+			else
+			{
+				ui.pushButton_Forward->setEnabled(true);
+				ui.pushButton_Backward->setEnabled(true);
+			}
+		}
+		else
+		{
+			ui.pushButton_Left->setEnabled(true);
+			ui.pushButton_Right->setEnabled(true);
+		}
+	}
+
+
+}
+
+void QDM_Interface::setMotorZButon(bool isRun)
+{
+	if (isFindZero)//找零完成后
+	{
+		if (ui.radioButton_Standard->isChecked())
+		{
+			if (isRun)
+			{
+				ui.pushButton_Up->setEnabled(false); // 禁用按钮
+				ui.pushButton_Down->setEnabled(false); // 禁用按钮	
+			}
+			else
+			{
+				ui.pushButton_Up->setEnabled(true);
+				ui.pushButton_Down->setEnabled(true);
+			}
+		}
+		else
+		{
+			ui.pushButton_Left->setEnabled(true);
+			ui.pushButton_Right->setEnabled(true);
+		}
+	}
+
+
+}
+
+void QDM_Interface::setButtonAble(bool enable)
+{
+	if (enable)
+	{
+		ui.pushButton_WriteLoadPos->setEnabled(true);
+		ui.pushButton_WriteUnloadPos->setEnabled(true);
+		ui.pushButton_LoadPos->setEnabled(true);
+		ui.pushButton_UnlodPos->setEnabled(true);
+		ui.pushButton_Forward->setEnabled(true);
+		ui.pushButton_Backward->setEnabled(true);
+		ui.pushButton_Left->setEnabled(true);
+		ui.pushButton_Right->setEnabled(true);
+		ui.pushButton_Up->setEnabled(true);
+		ui.pushButton_Down->setEnabled(true);
+	}
+	else
+	{
+		ui.pushButton_WriteLoadPos->setEnabled(false);
+		ui.pushButton_WriteUnloadPos->setEnabled(false);
+		ui.pushButton_LoadPos->setEnabled(false);
+		ui.pushButton_UnlodPos->setEnabled(false);
+		ui.pushButton_Forward->setEnabled(false);
+		ui.pushButton_Backward->setEnabled(false);
+		ui.pushButton_Left->setEnabled(false);
+		ui.pushButton_Right->setEnabled(false);
+		ui.pushButton_Up->setEnabled(false);
+		ui.pushButton_Down->setEnabled(false);
+	}
+
+}
+void QDM_Interface::openLaser()
+{
+	if (ui.pushButton_OpenLaser->text() == ("打开激光"))
+	{
+		QByteArray message = QByteArrayLiteral("\xfe\x05\x00\x00\xff\x00\x98\x35");
+		lightPort->write(message);
+		ui.pushButton_OpenLaser->setText("关闭激光");
+	}
+	else
+	{
+		QByteArray message = QByteArrayLiteral("\xfe\x05\x00\x00\x00\x00\xd9\xc5");
+		lightPort->write(message);
+		ui.pushButton_OpenLaser->setText("打开激光");
+	}
+}
+void QDM_Interface::openLed()
+{
+	if (ui.pushButton_OpenLED->text() == ("打开Led"))
+	{
+		QByteArray message = QByteArrayLiteral("\xfe\x05\x00\x01\xff\x00\xc9\xf5");
+		lightPort->write(message);
+		ui.pushButton_OpenLED->setText("关闭Led");
+	}
+	else
+	{
+		QByteArray message = QByteArrayLiteral("\xfe\x05\x00\x01\x00\x00\x88\x05");
+		lightPort->write(message);
+		ui.pushButton_OpenLED->setText("打开Led");
+	}
+}
+void QDM_Interface::connectLight()
+{
+	if (ui.pushButton_ConnectCurrent->text() == ("连接光源"))
+	{
+		QString itemText = ui.comboBox_Current->currentText();
+		QString comPort = itemText.split(" ").first();
+		lightPort->setPortName(comPort); // 设置串口号
+		lightPort->setBaudRate(QSerialPort::Baud9600); // 设置波特率
+		lightPort->setDataBits(QSerialPort::Data8); // 设置数据位
+		lightPort->setParity(QSerialPort::NoParity); // 设置校验位
+		lightPort->setStopBits(QSerialPort::OneStop); // 设置停止位
+		lightPort->setFlowControl(QSerialPort::NoFlowControl); // 设置流控制
+		if (lightPort->open(QIODevice::ReadWrite))
+		{
+			addLogEntry("连接光源成功!", ui.textEdit_Log);
+			ui.pushButton_OpenLaser->setEnabled(true);
+			ui.pushButton_OpenLED->setEnabled(true);
+			ui.pushButton_ConnectCurrent->setText(("断连光源"));
+		}
+	}
+	else
+	{
+		lightPort->close();
+		addLogEntry("断开光源链接!", ui.textEdit_Log);
+		ui.pushButton_OpenLaser->setEnabled(false);
+		ui.pushButton_OpenLED->setEnabled(false);
+		ui.pushButton_ConnectCurrent->setText(("连接光源"));
+	}
+}
+
+void QDM_Interface::connectCurrent()
+{
+	if (ui.pushButton_ConnectCurrent->text() == ("连接LED"))
+	{
+		QString itemText = ui.comboBox_Current->currentText();
+		QString comPort = itemText.split(" ").first();
+
+		if (LED->currentConnect(comPort))
+		{
+			LED->realTimeReading(true);
+			addLogEntry("连接LED成功!", ui.textEdit_Log);
+			ui.pushButton_CurrentSet->setEnabled(true);
+			ui.pushButton_CurrentOut->setEnabled(true);
+			ui.pushButton_ConnectCurrent->setText(("断连LED"));
+		}
+		else
+		{
+
+			if (LED->currentConnect(comPort))
+			{
+				LED->realTimeReading(true);
+				addLogEntry("连接LED成功!", ui.textEdit_Log);
+				ui.pushButton_ConnectCurrent->setText(("断连LED"));
+				ui.pushButton_CurrentSet->setEnabled(true);
+				ui.pushButton_CurrentOut->setEnabled(true);
+			}
+			else
+			{
+				addLogEntry("连接LED失败!", ui.textEdit_Log);
+				ui.pushButton_CurrentSet->setEnabled(false);
+				ui.pushButton_CurrentOut->setEnabled(false);
+			}
+
+		}
+	}
+	else
+	{
+		LED->disCurrentConnect();
+		ui.pushButton_ConnectCurrent->setText(("连接LED"));
+		ui.pushButton_CurrentSet->setEnabled(false);
+		ui.pushButton_CurrentOut->setEnabled(false);
+	}
+
+
+
+}
+
+
+
+void QDM_Interface::Current(float _current, float voltage)
+{
+	//展示电流值至控件
+	QString textA = QString::number(_current);
+	QString textV = QString::number(voltage);
+	QString text = "Vol: %1  Cur:%2";
+	ui.label_AV->setText(text.arg(textV).arg(textA));
+}
+
+void QDM_Interface::CurrentOK()
+{
+	addLogEntry("电流设置成功!", ui.textEdit_Log);
+}
+
+void QDM_Interface::VoltageOK()
+{
+	addLogEntry("电压设置成功!", ui.textEdit_Log);
+}
+
+void QDM_Interface::OutOK()
+{
+	addLogEntry("LED开关设置成功!", ui.textEdit_Log);
+}
+
+void QDM_Interface::CurrentAndVoltageOK()
+{
+	addLogEntry("LED电流电压设置成功!", ui.textEdit_Log);
+}
+
+
+void QDM_Interface::currentOut()
+{
+	if (ui.pushButton_CurrentOut->text() == ("输出"))
+	{
+
+		
+		LED->setOut(true);
+		Sleep(500);
+
+		ui.pushButton_CurrentOut->setText(("关闭"));
+	}
+	else
+	{
+		
+		LED->setOut(false);
+		Sleep(500);
+		ui.pushButton_CurrentOut->setText(("输出"));
+	}
+
+
+}
+
+void QDM_Interface::currentSet()
+{
+	float V = ui.lineEdit_V->text().toFloat();
+
+	float A = ui.lineEdit_A->text().toFloat();
+
+	LED->setCurrentAndVoltage(A, V);
+	Sleep(500);
+
+}
+
+void QDM_Interface::connectCoilXYZ()
+{
+	if (ui.pushButton_ConnectCoilXYZ->text() == ("连接线圈"))
+	{
+
+		QString comPortX = "COM17";
+		QString comPortY = "COM18";
+		QString comPortZ = "COM7";
+		/*ui.label_CoilCom->setText(comPortX + " " + comPortY + " " + comPortZ);*/
+
+		if (coilX->currentConnect(comPortX) && coilY->currentConnect(comPortY) && coilZ->currentConnect(comPortZ))
+		{
+			
+			//debug
+			coilX->realTimeReading(true);
+			coilY->realTimeReading(true);
+			coilZ->realTimeReading(true);
+			addLogEntry("连接线圈成功!", ui.textEdit_Log);
+			ui.pushButton_ConnectCoilXYZ->setText(("断连线圈"));
+
+			ui.pushButton_CoilXSet->setEnabled(true);
+			ui.pushButton_CoilXOut->setEnabled(true);
+			ui.pushButton_CoilYSet->setEnabled(true);
+			ui.pushButton_CoilYOut->setEnabled(true);
+			ui.pushButton_CoilZSet->setEnabled(true);
+			ui.pushButton_CoilZOut->setEnabled(true);
+
+		}
+		else
+		{
+
+			if (coilX->currentConnect(comPortX) && coilY->currentConnect(comPortY) && coilZ->currentConnect(comPortZ))
+			{
+				coilX->realTimeReading(true);
+				coilY->realTimeReading(true);
+				coilZ->realTimeReading(true);
+				addLogEntry("连接线圈成功!", ui.textEdit_Log);
+				ui.pushButton_ConnectCoilXYZ->setText(("断连线圈"));
+
+				ui.pushButton_CoilXSet->setEnabled(true);
+				ui.pushButton_CoilXOut->setEnabled(true);
+				ui.pushButton_CoilYSet->setEnabled(true);
+				ui.pushButton_CoilYOut->setEnabled(true);
+				ui.pushButton_CoilZSet->setEnabled(true);
+				ui.pushButton_CoilZOut->setEnabled(true);
+			}
+			else
+			{
+				addLogEntry("连接线圈失败!", ui.textEdit_Log);
+
+				ui.pushButton_CoilXSet->setEnabled(false);
+				ui.pushButton_CoilXOut->setEnabled(false);
+				ui.pushButton_CoilYSet->setEnabled(false);
+				ui.pushButton_CoilYOut->setEnabled(false);
+				ui.pushButton_CoilZSet->setEnabled(false);
+				ui.pushButton_CoilZOut->setEnabled(false);
+
+			}
+
+		}
+	}
+	else
+	{
+		coilX->disCurrentConnect();
+		coilY->disCurrentConnect();
+		coilZ->disCurrentConnect();
+
+		ui.pushButton_ConnectCoilXYZ->setText(("连接线圈"));
+
+		ui.pushButton_CoilXSet->setEnabled(false);
+		ui.pushButton_CoilXOut->setEnabled(false);
+		ui.pushButton_CoilYSet->setEnabled(false);
+		ui.pushButton_CoilYOut->setEnabled(false);
+		ui.pushButton_CoilZSet->setEnabled(false);
+		ui.pushButton_CoilZOut->setEnabled(false);
+	}
+}
+
+void QDM_Interface::coilXSet()
+{
+	float V = ui.lineEdit_CoilX_V->text().toFloat();
+
+	float A = ui.lineEdit_CoilX_A->text().toFloat();
+
+	coilX->setCurrentAndVoltage(A, V);
+	Sleep(500);
+}
+
+void QDM_Interface::coilXOut()
+{
+	if (ui.pushButton_CoilXOut->text() == ("线圈X输出"))
+	{
+
+		
+		coilX->setOut(true);
+		Sleep(500);
+
+		ui.pushButton_CoilXOut->setText(("线圈X关闭"));
+	}
+	else
+	{
+		
+		coilX->setOut(false);
+		Sleep(500);
+		ui.pushButton_CoilXOut->setText(("线圈X输出"));
+	}
+}
+
+void QDM_Interface::coilYSet()
+{
+	float V = ui.lineEdit_CoilY_V->text().toFloat();
+
+	float A = ui.lineEdit_CoilY_A->text().toFloat();
+
+	coilY->setCurrentAndVoltage(A, V);
+	Sleep(500);
+}
+
+void QDM_Interface::coilYOut()
+{
+	if (ui.pushButton_CoilYOut->text() == ("线圈Y输出"))
+	{
+
+		
+		coilY->setOut(true);
+		Sleep(500);
+		ui.pushButton_CoilYOut->setText(("线圈Y关闭"));
+	}
+	else
+	{
+		
+		coilY->setOut(false);
+		Sleep(500);
+		ui.pushButton_CoilYOut->setText(("线圈Y输出"));
+	}
+}
+
+void QDM_Interface::coilZSet()
+{
+	float V = ui.lineEdit_CoilZ_V->text().toFloat();
+
+	float A = ui.lineEdit_CoilZ_A->text().toFloat();
+
+	coilZ->setCurrentAndVoltage(A, V);
+	Sleep(500);
+}
+
+void QDM_Interface::coilZOut()
+{
+	if (ui.pushButton_CoilZOut->text() == ("线圈Z输出"))
+	{
+
+		
+		coilZ->setOut(true);
+		Sleep(500);
+
+		ui.pushButton_CoilZOut->setText(("线圈Z关闭"));
+	}
+	else
+	{
+		
+		coilZ->setOut(false);
+		Sleep(500);
+		ui.pushButton_CoilZOut->setText(("线圈Z输出"));
+	}
+}
+
+void QDM_Interface::CoilXOutOK()
+{
+	addLogEntry("线圈X开关设置成功!", ui.textEdit_Log);
+}
+
+void QDM_Interface::CoilXCurrentAndVoltageOK()
+{
+	addLogEntry("线圈X电流电压设置成功!", ui.textEdit_Log);
+}
+
+void QDM_Interface::CoilYOutOK()
+{
+	addLogEntry("线圈Y开关设置成功!", ui.textEdit_Log);
+}
+
+void QDM_Interface::CoilYCurrentAndVoltageOK()
+{
+	addLogEntry("线圈Y电流电压设置成功!", ui.textEdit_Log);
+}
+
+void QDM_Interface::CoilZOutOK()
+{
+	addLogEntry("线圈Z开关设置成功!", ui.textEdit_Log);
+}
+
+void QDM_Interface::CoilZCurrentAndVoltageOK()
+{
+	addLogEntry("线圈Z电流电压设置成功!", ui.textEdit_Log);
+}
+
+void QDM_Interface::CurrentX(float _current, float voltage)
+{
+	//展示电流值至控件
+	QString textA = QString::number(_current);
+	QString textV = QString::number(voltage);
+	QString text = "X线圈  Vol: %1  Cur:%2";
+	ui.label_XAV->setText(text.arg(textV).arg(textA));
+}
+
+void QDM_Interface::CurrentY(float _current, float voltage)
+{
+	//展示电流值至控件
+	QString textA = QString::number(_current);
+	QString textV = QString::number(voltage);
+	QString text = "Y线圈  Vol: %1  Cur:%2";
+	ui.label_YAV->setText(text.arg(textV).arg(textA));
+}
+
+void QDM_Interface::CurrentZ(float _current, float voltage)
+{
+	//展示电流值至控件
+	QString textA = QString::number(_current);
+	QString textV = QString::number(voltage);
+	QString text = "Z线圈  Vol: %1  Cur:%2";
+	ui.label_ZAV->setText(text.arg(textV).arg(textA));
+}
+
+
+
+void QDM_Interface::Sleep(int msec)
+{
+	QEventLoop loop;//定义一个新的事件循环
+	QTimer::singleShot(msec, &loop, SLOT(quit()));//创建单次定时器，槽函数为事件循环的退出函数
+	loop.exec();//事件循环开始执行，程序会卡在这里，直到定时时间到，本循环被退出
+}
+
+void QDM_Interface::on_MouseMoveCustomplot(QMouseEvent* event)
+{
+	QPointF CPoint = event->pos();
+
+	//鼠标点击的后屏幕位置转换到下坐标轴对应坐标
+	float cur_x = ui.widget->xAxis->pixelToCoord(CPoint.x());
+	float cur_y = ui.widget->yAxis->pixelToCoord(CPoint.y());
+	int index = ui.widget->graph(0)->findBegin(cur_x, true);
+	if (index == ui.widget->graph()->data().data()->size() || index == 0)
+		return;
+	//float cur_y = ui.widget->graph()->data().data()->at(index)->value;
+	//cur_x = ui.widget->graph()->data().data()->at(index)->key;
+	QToolTip::showText(event->globalPos(), tr(
+		"<h4>%1</h4>"
+		"<table>"
+		"<tr>"
+		"<td><h5>X: %2</h5></td>" "<td>  ,  </td>" "<td><h5>Y: %3</h5></td>"
+		"</tr>"
+		"</table>").arg(ui.widget->graph()->name()).arg(QString::number(cur_x)).arg(QString::number(cur_y)), this, this->rect());
+	//m_cur_Label_temp->setText(QString("x = %1, y = %2").arg(cur_x).arg(cur_y));//设置游标说明内容
+	//注意：这里使用的是QToolTip，没有使用CustomPlot里面的游标，所以不需要调用replot函数
+	//ui.widget->replot();//绘制器一定要重绘，否则看不到游标位置更新情况
+}
+
+
+void QDM_Interface::startSweepMeasure()
+{
+	is_calOffGrayValue = false;
+	ui.pushButton_StopSweepMeasure->setEnabled(true);
+	int picNums = ui.lineEdit_PicNums->text().toInt();
+	if (ui.pushButton_ConnectCamera->text() == ("连接相机"))
+	{
+		addLogEntry("请连接相机!", ui.textEdit_Log);
+		ui.pushButton_StopSweepMeasure->setEnabled(false);
+		return;
+	}
+	if (ui.pushButton_ConnectPulse->text() == ("连接脉冲卡"))
+	{
+		addLogEntry("请连接脉冲卡!", ui.textEdit_Log);
+		ui.pushButton_StopSweepMeasure->setEnabled(false);
+		return;
+	}
+	if (ui.pushButton_ConnectWave->text() == ("连接微波"))
+	{
+		addLogEntry("请连接微波!", ui.textEdit_Log);
+		ui.pushButton_StopSweepMeasure->setEnabled(false);
+		return;
+	}
+	//if (ui.pushButton_ConnectCurrent->text() == ("连接LED"))
+	//{
+	//	addLogEntry("请连接LED!", ui.textEdit_Log);
+	//	ui.pushButton_StopSweepMeasure->setEnabled(false);
+	//	return;
+	//}
+	
+	ui.radioButton_HardTrigger->setChecked(true);
+	m_mvCapThread->stop();
+	if (m_mvCamera->setCameraTriggerMode(2))
+	{
+
+		ui.pushButton_SoftTriggerOnce->setEnabled(false);
+	}
+
+	if (ui.widget->graphCount() != 0)
+	{
+		ui.widget->clearGraphs();
+	}
+	ui.widget->addGraph();
+	ui.widget->graph(0)->setPen(QPen(QColor(255, 115, 45, 255), 2));
+	ui.widget->xAxis->setRange(2.7, 3.1);
+	ui.widget->replot();
+
+	//开灯
+	/*currentSet();
+	LED->setOut(true);
+	ui.pushButton_CurrentOut->setText(("关闭"));
+*/
+	//偏置磁场
+	/*if (ui.radioButton_Mag->isChecked())
+	{
+		if (ui.pushButton_ConnectCoilXYZ->text() == ("连接线圈"))
+		{
+			addLogEntry("请连接线圈!", ui.textEdit_Log);
+			addLogEntry("停止扫频!", ui.textEdit_Log);
+			clearPulse();
+			ui.pushButton_StopSweepMeasure->setEnabled(false);
+			return;
+		}
+		coilXSet();
+		coilYSet();
+		coilZSet();
+
+		coilX->setOut(true);
+		Sleep(200);
+		ui.pushButton_CoilXOut->setText(("线圈X关闭"));
+
+		coilY->setOut(true);
+		Sleep(200);
+		ui.pushButton_CoilYOut->setText(("线圈Y关闭"));
+
+		coilZ->setOut(true);
+		Sleep(200);
+		ui.pushButton_CoilZOut->setText(("线圈Z关闭"));
+	}*/
+	
+	//相机线程
+	m_mvCamera->clearCameraBuffer();
+	Sleep(10);
+	g_SweepFreStart = ui.lineEdit_StartFre->text().toDouble();
+	g_SweepFreEnd = ui.lineEdit_EndFre->text().toDouble();
+	g_SweepFreStep = ui.lineEdit_StepFre->text().toDouble() / 1000000;
+	pulse_pulseNumbers = std::ceil((g_SweepFreEnd - g_SweepFreStart) / g_SweepFreStep);
+	pulse_pulseNumbers += 1;
+
+	m_mvSweepThread->setPicNums(picNums);
+	m_mvSweepThread->start();
+	m_mvSweepThread->stream();
+	templeVec.clear();
+	addLogEntry("相机启动成功!", ui.textEdit_Log);
+
+	//微波
+	ui.radioButton_SweepFreMode->setChecked(true);
+	resetWave();
+	Sleep(2000);
+	sendWaveMode();
+	Sleep(500);
+	sendSweepFre();
+	Sleep(500);
+	startWave();
+
+	
+	
+	
+	//脉冲
+	if (is_ConnectPuls &&is_SetPulseParamOk)
+	{
+		//频率抓图次数决定脉冲
+		if (1 == picNums)
+		{
+			
+			pulseControl->startPulse(pulse_cycleTime, pulse_pulseNumbers, pulse_A0, pulse_A1, pulse_A2, 1);
+			
+			
+		}
+		else//n次扫频
+		{
+			A0.fill(0.0f, pulse_cycleTime);
+			pulseControl->startPulse(pulse_cycleTime, 1, pulse_A0, pulse_A1, pulse_A2, 1);
+			
+			
+		}
+		
+		
+		addLogEntry("脉冲启动输出!", ui.textEdit_Log);
+	}
+	else
+	{
+		addLogEntry("未设置脉冲!", ui.textEdit_Log);
+		addLogEntry("停止扫频!", ui.textEdit_Log);
+		clearPulse();
+		ui.pushButton_StopSweepMeasure->setEnabled(false);
+		return;
+	}
+	
+
+	addLogEntry("开始扫频测量!", ui.textEdit_Log);
+	ui.groupBox_camera->setEnabled(false); 
+	ui.groupBox_coil->setEnabled(false);
+	ui.groupBox_wave->setEnabled(false);
+	ui.groupBox_MT->setEnabled(false);
+	ui.groupBox_Gs->setEnabled(false);
+	ui.groupBox_Connect->setEnabled(false);
+
+	m_isSweep = true;
+	m_isAllFixFre = false;
+
+}
+
+void QDM_Interface::stopSweep()
+{
+	ui.pushButton_StartSweepMeasure->setEnabled(false);
+	m_mvSweepThread->stop();
+
+	//updata
+	auto max = std::max_element(std::begin(templeVec), std::end(templeVec));
+	auto min = std::min_element(std::begin(templeVec), std::end(templeVec));
+
+	if (*min == *max)
+	{
+		ui.widget->yAxis->setRange((*min) * 0.9, (*min) * 1.1);
+	}
+	else
+	{
+		ui.widget->yAxis->setRange((*min) * 1.1 - (*max) * 0.1, (*max) * 1.1 - (*min) * 0.1);
+	}
+	ui.widget->replot();
+	
+}
+
+void QDM_Interface::startFixFreMeasure()
+{
+	m_isStopFix = false;
+	ui.pushButton_StopFixFreMeasure->setEnabled(true);
+	if (ui.pushButton_ConnectCamera->text() == ("连接相机"))
+	{
+		addLogEntry("请连接相机!", ui.textEdit_Log);
+		ui.pushButton_StopFixFreMeasure->setEnabled(false);
+		return;
+	}
+	if (ui.pushButton_ConnectPulse->text() == ("连接脉冲卡"))
+	{
+		addLogEntry("请连接脉冲卡!", ui.textEdit_Log);
+		ui.pushButton_StopFixFreMeasure->setEnabled(false);
+		return;
+	}
+	if (ui.pushButton_ConnectWave->text() == ("连接微波"))
+	{
+		addLogEntry("请连接微波!", ui.textEdit_Log);
+		ui.pushButton_StopFixFreMeasure->setEnabled(false);
+		return;
+	}
+	/*if (ui.pushButton_ConnectCurrent->text() == ("连接LED"))
+	{
+		addLogEntry("请连接LED!", ui.textEdit_Log);
+		ui.pushButton_StopFixFreMeasure->setEnabled(false);
+		return;
+	}*/
+
+
+	ui.radioButton_HardTrigger->setChecked(true);
+	m_mvCapThread->stop();
+	if (m_mvCamera->setCameraTriggerMode(2))
+	{
+
+		ui.pushButton_SoftTriggerOnce->setEnabled(false);
+	}
+	
+
+	////开灯
+	/*currentSet();
+	LED->setOut(true);
+	ui.pushButton_CurrentOut->setText(("关闭"));*/
+
+	////偏置磁场
+	//if (ui.radioButton_Mag->isChecked())
+	//{
+	//	if (ui.pushButton_ConnectCoilXYZ->text() == ("连接线圈"))
+	//	{
+	//		addLogEntry("请连接线圈!", ui.textEdit_Log);
+	//		addLogEntry("停止扫频!", ui.textEdit_Log);
+	//		clearPulse();
+	//		ui.pushButton_StopFixFreMeasure->setEnabled(false);
+	//		return;
+	//	}
+
+	//	coilXSet();
+	//	coilYSet();
+	//	coilZSet();
+
+	//	coilX->setOut(true);
+	//	Sleep(200);
+	//	ui.pushButton_CoilXOut->setText(("线圈X关闭"));
+
+	//	coilY->setOut(true);
+	//	Sleep(200);
+	//	ui.pushButton_CoilYOut->setText(("线圈Y关闭"));
+
+	//	coilZ->setOut(true);
+	//	Sleep(200);
+	//	ui.pushButton_CoilZOut->setText(("线圈Z关闭"));
+	//}
+	
+
+	
+
+	//相机
+	if (true)
+	{
+		//初始化点频结构体
+		int width = g_Width;
+		int height = g_Height;
+		int type = CV_32FC1;
+		averMat = cv::Mat::zeros(height, width, type);
+		averMat_New = cv::Mat::zeros(height, width, type);
+		averMat_1 = cv::Mat::zeros(height, width, type);
+		averMat_2 = cv::Mat::zeros(height, width, type);
+		averMat_3 = cv::Mat::zeros(height, width, type);
+		averMat_4 = cv::Mat::zeros(height, width, type);
+		divideMat = cv::Mat::zeros(height, width, type);
+		sumMat = cv::Mat::zeros(height, width, type);
+
+		currentPulseNum = 0.0;
+		onTemp = cv::Mat::zeros(height, width, type);
+		offTemp = cv::Mat::zeros(height, width, type);
+		onTemp_2 = cv::Mat::zeros(height, width, type);
+		offTemp_2 = cv::Mat::zeros(height, width, type);
+		onTempNum = 0;
+		offTempNum = 0;
+
+	}
+	m_mvCamera->clearCameraBuffer();
+	Sleep(50);
+	g_IterationTime = ui.lineEdit_IterationTime->text().toInt();
+	currentIterNum = 0;
+	g_FixedFre = ui.lineEdit_FixFre->text().toDouble();
+	m_mvFixFreThread->start();
+	m_mvFixFreThread->stream();
+	addLogEntry("相机启动成功!", ui.textEdit_Log);
+
+	//微波
+	ui.radioButton_FixFreMode->setChecked(true);
+	resetWave();
+	Sleep(2000);
+	sendWaveMode();
+	Sleep(500);
+	sendFixFre();
+	Sleep(500);
+	startWave();
+
+	//脉冲
+	if (is_ConnectPuls &&is_SetPulseParamOk)
+	{
+		if (isLockIn == false)
+		{
+			if (pulse_cycleTime >= 2000)
+			{
+				QMessageBox msgBox;
+				msgBox.setStyleSheet("QMessageBox{ background-color: black;font-size: 16px; }"
+					"QMessageBox QLabel{ color: white; font-size: 16px;}"
+					"QMessageBox QPushButton{ background-color: rgb(42, 41, 41); color: white; font-size: 16px;}"); // 设置弹框的样式
+				msgBox.setWindowTitle("确定修改脉冲");
+				msgBox.setText("脉冲时间>2000,是否自动修正脉冲时间？");
+				msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+				msgBox.setDefaultButton(QMessageBox::No);
+				int ret = msgBox.exec();
+				if (ret == QMessageBox::Yes) {
+					//TODO 修正单次脉冲
+					int scalePlus = 0;
+					for (int i = 1; i <= 10; i++)
+					{
+						if (pulse_cycleTime / i < 2000)
+						{
+							scalePlus = i;
+							break;
+						}
+					}
+					if (0 == scalePlus)
+					{
+						addLogEntry("脉冲时间过长，请自行调整至2000ms以内!", ui.textEdit_Log);
+						addLogEntry("停止扫频!", ui.textEdit_Log);
+						clearPulse();
+						ui.pushButton_StopSweepMeasure->setEnabled(false);
+						return;
+					}
+					int scaleN = 0;
+					//脉冲起点
+					scaleN = pulse_startTime0_0 % scalePlus;
+					pulse_startTime0_0 -= scaleN;
+					//脉冲持续
+					scaleN = pulse_ctuTime0_0 % scalePlus;
+					pulse_ctuTime0_0 -= scaleN;
+					//相机起点0
+					scaleN = pulse_startTime1_0 % scalePlus;
+					pulse_startTime1_0 -= scaleN;
+					//相机起点1
+					scaleN = pulse_startTime1_1 % scalePlus;
+					pulse_startTime1_1 -= scaleN;
+					//相机持续0
+					scaleN = pulse_ctuTime1_0 % scalePlus;
+					pulse_ctuTime1_0 -= scaleN;
+					//相机持续1
+					scaleN = pulse_ctuTime1_1 % scalePlus;
+					pulse_ctuTime1_1 -= scaleN;
+					//微波开关起点
+					scaleN = pulse_startTime2_0 % scalePlus;
+					pulse_startTime2_0 -= scaleN;
+					//微波开关持续
+					scaleN = pulse_ctuTime2_0 % scalePlus;
+					pulse_ctuTime2_0 -= scaleN;
+
+					QVector<float> A0, A1, A2;
+					A0.resize(pulse_cycleTime / scalePlus);
+					A1.resize(pulse_cycleTime / scalePlus);
+					A2.resize(pulse_cycleTime / scalePlus);
+					for (int i = 0; i < pulse_cycleTime / scalePlus; i++)
+					{
+
+						if ((i >= pulse_startTime0_0 / scalePlus) && (i < pulse_startTime0_0 / scalePlus + pulse_ctuTime0_0 / scalePlus))
+						{
+							A0[i] = (float)4.0;
+						}
+						else
+						{
+							A0[i] = 0.0;
+						}
+						bool a = (i >= pulse_startTime1_0 / scalePlus) && (i < pulse_startTime1_0 / scalePlus + pulse_ctuTime1_0 / scalePlus);
+						bool b = (i >= pulse_startTime1_1 / scalePlus) && (i < pulse_startTime1_0 / scalePlus + pulse_ctuTime1_1 / scalePlus);
+						if (a || b)
+						{
+							A1[i] = (float)5.0;
+						}
+						else
+						{
+							A1[i] = 0.0;
+						}
+
+
+						if ((i >= pulse_startTime2_0 / scalePlus) && (i < pulse_startTime2_0 / scalePlus + pulse_ctuTime2_0 / scalePlus))
+						{
+							A2[i] = (float)5.0;
+						}
+						else
+						{
+							A2[i] = 0.0;
+						}
+					}
+					pulse_A0.clear();
+					pulse_A1.clear();
+					pulse_A2.clear();
+					pulse_A0 = A0;
+					pulse_A1 = A1;
+					pulse_A2 = A2;
+					addLogEntry("自动修正脉冲时间!", ui.textEdit_Log);
+					Sleep(1500);
+					pulseControl->startPulse(pulse_cycleTime / scalePlus, g_IterationTime, pulse_A0, pulse_A1, pulse_A2, scalePlus);
+
+
+				}
+				else
+				{
+					addLogEntry("未自动修正脉冲时间，请自行调整脉冲!", ui.textEdit_Log);
+					addLogEntry("停止点频!", ui.textEdit_Log);
+					clearPulse();
+					ui.pushButton_StopSweepMeasure->setEnabled(false);
+					return;
+
+				}
+			}
+			else
+			{
+				Sleep(100);
+				pulseControl->startPulse(pulse_cycleTime, g_IterationTime, pulse_A0, pulse_A1, pulse_A2, 1);
+				addLogEntry("脉冲启动输出!", ui.textEdit_Log);
+			}
+		}
+		else
+		{
+			QVector<float> lockinPulseCurrent(80, 0), lockinPulseCamera(80, 0), lockinPulseMw(80, 0);
+			for (int i = 0; i < 40; i++)
+			{
+				lockinPulseCurrent[i] = 5;
+			}
+
+			lockinPulseCamera[8] = 3.3;
+			lockinPulseCamera[9] = 3.3;
+			lockinPulseCamera[28] = 3.3;
+			lockinPulseCamera[29] = 3.3;
+			lockinPulseCamera[48] = 3.3;
+			lockinPulseCamera[49] = 3.3;
+			lockinPulseCamera[68] = 3.3;
+			lockinPulseCamera[69] = 3.3;
+
+
+			for (int i = 5; i < 12; i++)
+			{
+				lockinPulseMw[i] = 3.3;
+			}
+			for (int i = 45; i < 52; i++)
+			{
+				lockinPulseMw[i] = 3.3;
+			}
+			/*for (int i = 0; i < 55; i++)
+			{
+				lockinPulseMw[i] = 3.3;
+			}*/
+			pulseControl->startPulse_LockIn(80, g_IterationTime, lockinPulseCurrent, lockinPulseCamera, lockinPulseMw, 1);
+			addLogEntry("脉冲启动输出!", ui.textEdit_Log);
+	
+		}
+		
+	}
+	else
+	{
+		addLogEntry("未设置脉冲!", ui.textEdit_Log);
+		addLogEntry("停止点频!", ui.textEdit_Log);
+		clearPulse();
+		ui.pushButton_StopFixFreMeasure->setEnabled(false);
+		return;
+	}
+	
+	addLogEntry(QString::number(ui.lineEdit_FixFre->text().toDouble()), ui.textEdit_Log);
+	addLogEntry("开始对比度测量!", ui.textEdit_Log);
+	ui.groupBox_camera->setEnabled(false);
+	ui.groupBox_coil->setEnabled(false);
+	ui.groupBox_wave->setEnabled(false);
+	ui.groupBox_MT->setEnabled(false);
+	ui.groupBox_Gs->setEnabled(false);
+	ui.groupBox_Connect->setEnabled(false);
+
+	m_isSweep = false;
+	m_isAllFixFre = false;
+}
+
+void QDM_Interface::stopFixFre()
+{
+	m_setNums = 0;
+	m_isStopFix = true;
+	m_mvFixFreThread->stop();
+}
+
+void QDM_Interface::startAllFixFre()
+{
+	m_isStopFix = false;
+
+	ui.pushButton_StopFixFreMeasure->setEnabled(true);
+	if (ui.pushButton_ConnectCamera->text() == ("连接相机"))
+	{
+		addLogEntry("请连接相机!", ui.textEdit_Log);
+		ui.pushButton_StopFixFreMeasure->setEnabled(false);
+		return;
+	}
+	if (ui.pushButton_ConnectPulse->text() == ("连接脉冲卡"))
+	{
+		addLogEntry("请连接脉冲卡!", ui.textEdit_Log);
+		ui.pushButton_StopFixFreMeasure->setEnabled(false);
+		return;
+	}
+	if (ui.pushButton_ConnectWave->text() == ("连接微波"))
+	{
+		addLogEntry("请连接微波!", ui.textEdit_Log);
+		ui.pushButton_StopFixFreMeasure->setEnabled(false);
+		return;
+	}
+	if (ui.pushButton_ConnectCurrent->text() == ("连接LED"))
+	{
+		addLogEntry("请连接LED!", ui.textEdit_Log);
+		ui.pushButton_StopFixFreMeasure->setEnabled(false);
+		return;
+	}
+
+	if (m_setNums==0)
+	{
+		ui.radioButton_HardTrigger->setChecked(true);
+		ctuCapThread->stop();
+		if (FLcamera->setCameraTriggerMode(2))
+		{
+
+			ui.pushButton_SoftTriggerOnce->setEnabled(false);
+		}
+
+		//开灯
+		currentSet();
+		LED->setOut(true);
+		ui.pushButton_CurrentOut->setText(("关闭"));
+
+		//偏置磁场
+		if (ui.radioButton_Mag->isChecked())
+		{
+			if (ui.pushButton_ConnectCoilXYZ->text() == ("连接线圈"))
+			{
+				addLogEntry("请连接线圈!", ui.textEdit_Log);
+				addLogEntry("停止扫频!", ui.textEdit_Log);
+				clearPulse();
+				ui.pushButton_StopFixFreMeasure->setEnabled(false);
+				return;
+			}
+
+			coilXSet();
+			coilYSet();
+			coilZSet();
+
+			coilX->setOut(true);
+			Sleep(200);
+			ui.pushButton_CoilXOut->setText(("线圈X关闭"));
+
+			coilY->setOut(true);
+			Sleep(200);
+			ui.pushButton_CoilYOut->setText(("线圈Y关闭"));
+
+			coilZ->setOut(true);
+			Sleep(200);
+			ui.pushButton_CoilZOut->setText(("线圈Z关闭"));
+		}
+	}
+	
+
+
+	//微波
+	g_SweepFreStart = ui.lineEdit_StartFre->text().toDouble();
+	g_SweepFreEnd = ui.lineEdit_EndFre->text().toDouble();
+	g_SweepFreStep = ui.lineEdit_StepFre->text().toDouble() / 1000000;
+	ui.lineEdit_FixFre->setText(QString::number(g_SweepFreStart));
+	ui.radioButton_FixFreMode->setChecked(true);
+	resetWave();
+	Sleep(2000);
+	sendWaveMode();
+	Sleep(500);
+	sendFixFre();
+	Sleep(500);
+	startWave();
+
+	//相机
+	TUCAM_Buf_Release(m_opCam.hIdxTUCam);
+	Sleep(50);
+	g_IterationTime = ui.lineEdit_IterationTime->text().toInt();
+	currentIterNum = 0;
+	g_FixedFre = ui.lineEdit_FixFre->text().toDouble();
+	
+	m_mvFixFreThread->start();
+	m_mvFixFreThread->stream();
+
+	addLogEntry("相机启动成功!", ui.textEdit_Log);
+
+	if (is_ConnectPuls &&is_SetPulseParamOk)
+	{
+		Sleep(1500);
+		pulseControl->startPulse(pulse_cycleTime, g_IterationTime, pulse_A0, pulse_A1, pulse_A2, 1);
+		addLogEntry("脉冲启动输出!", ui.textEdit_Log);
+
+	}
+	else
+	{
+		addLogEntry("未设置脉冲!", ui.textEdit_Log);
+		addLogEntry("停止点频!", ui.textEdit_Log);
+		clearPulse();
+		ui.pushButton_StopFixFreMeasure->setEnabled(false);
+		return;
+	}
+
+	addLogEntry(QString::number(ui.lineEdit_FixFre->text().toDouble()), ui.textEdit_Log);
+	addLogEntry("开始对比度测量!", ui.textEdit_Log);
+	ui.groupBox_camera->setEnabled(false);
+	ui.groupBox_coil->setEnabled(false);
+	ui.groupBox_wave->setEnabled(false);
+	ui.groupBox_MT->setEnabled(false);
+	ui.groupBox_Gs->setEnabled(false);
+	ui.groupBox_Connect->setEnabled(false);
+
+	m_isSweep = false;
+	m_isAllFixFre = true;
+}
+
+void QDM_Interface::drawSweepData(double fre, double meanValue)
+{
+	ui.widget->graph(0)->addData(fre, meanValue);
+	templeVec.append(meanValue);
+	auto max = std::max_element(std::begin(templeVec), std::end(templeVec));
+	auto min = std::min_element(std::begin(templeVec), std::end(templeVec));
+
+	if (*min == *max)
+	{
+		ui.widget->yAxis->setRange((*min) * 0.9, (*min) * 1.1);
+	}
+	else
+	{
+		ui.widget->yAxis->setRange((*min) * 1.1 - (*max) * 0.1, (*max) * 1.1 - (*min) * 0.1);
+	}
+
+	ui.widget->replot();
+}
+
+void QDM_Interface::processSweepData(double fre, cv::Mat on, cv::Mat off)
+{
+	int picNums = ui.lineEdit_PicNums->text().toInt();
+	if (isAutoSave)
+	{
+		if (!is_calOffGrayValue)
+		{
+			QString str = ui.lineEdit_SavePath->text() + "/offwave";
+			QDir dir;
+			if (!dir.exists(str)) {
+				// 如果路径不存在，则创建新目录
+				dir.mkpath(str);
+			}
+			QString str2 = str + "/offWave.tiff";
+			QByteArray data = str2.toLocal8Bit();
+			string strtiff = string(data);
+			cv::Mat offWave = off / picNums;
+			
+			cv::Mat off32f;
+			if (offWave.type() != CV_32FC1) {
+
+				offWave.convertTo(off32f, CV_32FC1);
+				cv::imwrite(strtiff, off32f);
+			}
+			else
+			{
+				cv::imwrite(strtiff, offWave);
+			}
+			is_calOffGrayValue = true;
+		}
+	}
+	
+	
+	if (1==picNums)
+	{
+
+		double meanValue = 0.0;
+		if (isAutoSave)
+		{
+			cv::Mat resultMat(g_Height, g_Width, CV_32FC1); // 使用较低精度的数据类型
+#pragma omp parallel for reduction(+:meanValue)
+			for (int i = 0; i < on.rows; i++) {
+				for (int j = 0; j < on.cols; j++) {
+					ushort onPixel = on.at<ushort>(i, j); // 存储on图像的像素值
+					ushort offPixel = off.at<ushort>(i, j); // 存储off图像的像素值
+					if (offPixel != 0) {
+						meanValue += static_cast<float>(onPixel) / static_cast<float>(offPixel); // 使用局部变量进行计算
+						resultMat.at<float>(i, j) = static_cast<float>(onPixel) / static_cast<float>(offPixel);
+					}
+					else
+					{
+						resultMat.at<float>(i, j) = 0.0;
+					}
+					
+					
+
+				}
+			}
+			//保存32F图片
+			QString str = ui.lineEdit_SavePath->text() + "/" + QString::number(fre) + ".tiff";
+			QByteArray data = str.toLocal8Bit();
+			string strtiff = string(data);
+			saveImage(resultMat, strtiff);
+		}
+		else
+		{
+
+			
+#pragma omp parallel for reduction(+:meanValue)
+			for (int i = 0; i < on.rows; i++) {
+				for (int j = 0; j < on.cols; j++) {
+					ushort onPixel = on.at<ushort>(i, j); // 存储on图像的像素值
+					ushort offPixel = off.at<ushort>(i, j); // 存储off图像的像素值
+					if (offPixel != 0) {
+						meanValue += static_cast<float>(onPixel) / static_cast<float>(offPixel); // 使用局部变量进行计算
+					}
+				}
+			}
+			//on.convertTo(on, CV_32F);
+			//off.convertTo(off, CV_32F);
+			//cv::Mat resultMat = on / off;
+			//cv::Scalar mean = cv::mean(resultMat);
+			//meanValue = mean[0]; // 第一个通道的均值
+		}
+		meanValue /= (on.rows * on.cols);
+
+		
+		/*timer3.start();
+		qint64 elapsedTime = timer3.elapsed();
+		qDebug() << "draw ODMR time:" << elapsedTime;*/
+
+		ui.widget->graph()->addData(fre, meanValue);
+		templeVec.append(meanValue);
+		qDebug() << "mainThread:" << fre;
+		if (0==templeVec.size()%150)
+		{
+			auto max = std::max_element(std::begin(templeVec), std::end(templeVec));
+			auto min = std::min_element(std::begin(templeVec), std::end(templeVec));
+
+			if (*min == *max)
+			{
+				ui.widget->yAxis->setRange((*min) * 0.9, (*min) * 1.1);
+			}
+			else
+			{
+				ui.widget->yAxis->setRange((*min) * 1.1 - (*max) * 0.1, (*max) * 1.1 - (*min) * 0.1);
+			}
+			ui.widget->replot();
+		}
+		
+		
+	}
+	else//多次扫频
+	{
+		
+
+
+		double meanValue = 0.0;
+		
+		
+		if (isAutoSave)
+		{
+			cv::Mat resultMat(g_Height, g_Width, CV_32FC1); // 使用较低精度的数据类型
+#pragma omp parallel for reduction(+:meanValue)
+			for (int i = 0; i < on.rows; i++) {
+				for (int j = 0; j < on.cols; j++) {
+					float onPixel = on.at<float>(i, j); // 存储on图像的像素值
+					float offPixel = off.at<float>(i, j); // 存储off图像的像素值
+					if (offPixel != 0) {
+						meanValue += static_cast<float>(onPixel) / static_cast<float>(offPixel); // 使用局部变量进行计算
+						resultMat.at<float>(i, j) = static_cast<float>(onPixel) / static_cast<float>(offPixel);
+					}
+					else
+					{
+						resultMat.at<float>(i, j) = 0.0;
+					}
+
+				}
+			}
+			//保存32F图片
+			QString str = ui.lineEdit_SavePath->text() + "/" + QString::number(fre) + ".tiff";
+			QByteArray data = str.toLocal8Bit();
+			string strtiff = string(data);
+			saveImage(resultMat, strtiff);
+		}
+		else
+		{
+#pragma omp parallel for reduction(+:meanValue)
+			for (int i = 0; i < on.rows; i++) {
+				for (int j = 0; j < on.cols; j++) {
+					float onPixel = on.at<float>(i, j); // 存储on图像的像素值
+					float offPixel = off.at<float>(i, j); // 存储off图像的像素值
+					meanValue += static_cast<float>(onPixel) / static_cast<float>(offPixel); // 使用局部变量进行计算
+					
+				}
+			}
+		}
+		meanValue /= (on.rows * on.cols);
+		
+
+		//cv::Scalar mean = cv::mean(resultMat);
+		//double meanDouble = 0.0;
+		//for (int i = 0; i < mean.rows; ++i) {
+		//	meanDouble += mean.val[i];
+		//}
+		//meanValue = meanDouble;
+
+		ui.widget->graph()->addData(fre, meanValue);
+		templeVec.append(meanValue);
+		auto max = std::max_element(std::begin(templeVec), std::end(templeVec));
+		auto min = std::min_element(std::begin(templeVec), std::end(templeVec));
+
+		if (*min == *max)
+		{
+			ui.widget->yAxis->setRange((*min) * 0.9, (*min) * 1.1);
+		}
+		else
+		{
+			ui.widget->yAxis->setRange((*min) * 1.1 - (*max) * 0.1, (*max) * 1.1 - (*min) * 0.1);
+		}
+		ui.widget->replot();
+	}
+
+
+
+
+}
+
+void QDM_Interface::processSweepData2(double frevalue, int count, unsigned char* rawBuffer)
+{
+	
+	CameraDataProcess::rawChangetoMat(rawBuffer, g_Width, g_Height, sweepDst);
+	int picNums = ui.lineEdit_PicNums->text().toInt();
+
+	//cv_16u
+	if (1 == picNums)
+	{
+		if (0==count%2)
+		{
+			sweepOnMat = sweepDst.clone();
+			//showSweepPic(sweepOnMat);
+		}
+		else
+		{
+			sweepOffMat = sweepDst.clone();
+			//showSweepPic(sweepOffMat);
+			//计算处理
+			double meanValue = 0.0;
+			if (isAutoSave)
+			{
+				cv::Mat resultMat(g_Height, g_Width, CV_32FC1); // 使用较低精度的数据类型
+#pragma omp parallel for reduction(+:meanValue)
+				for (int i = 0; i < sweepOnMat.rows; i++) {
+					for (int j = 0; j < sweepOnMat.cols; j++) {
+						ushort onPixel = sweepOnMat.at<ushort>(i, j); // 存储on图像的像素值
+						ushort offPixel = sweepOffMat.at<ushort>(i, j); // 存储off图像的像素值
+						if (offPixel != 0) {
+							meanValue += static_cast<float>(onPixel) / static_cast<float>(offPixel); // 使用局部变量进行计算
+							resultMat.at<float>(i, j) = static_cast<float>(onPixel) / static_cast<float>(offPixel);
+						}
+						else
+						{
+							resultMat.at<float>(i, j) = 0.0;
+						}
+					}
+				}
+				//保存32F图片
+				QString str = ui.lineEdit_SavePath->text() + "/" + QString::number(frevalue) + ".tiff";
+				QByteArray data = str.toLocal8Bit();
+				string strtiff = string(data);
+				saveImage(resultMat, strtiff);
+			}
+			else
+			{
+#pragma omp parallel for reduction(+:meanValue)
+				for (int i = 0; i < sweepOnMat.rows; i++) {
+					for (int j = 0; j < sweepOnMat.cols; j++) {
+						ushort onPixel = sweepOnMat.at<ushort>(i, j); // 存储on图像的像素值
+						ushort offPixel = sweepOffMat.at<ushort>(i, j); // 存储off图像的像素值
+						if (offPixel != 0) {
+							meanValue += static_cast<float>(onPixel) / static_cast<float>(offPixel); // 使用局部变量进行计算
+						}
+					}
+				}
+			}
+
+			meanValue /= (sweepOnMat.rows * sweepOffMat.cols);
+
+
+			ui.widget->graph()->addData(frevalue, meanValue);
+			templeVec.append(meanValue);
+			auto max = std::max_element(std::begin(templeVec), std::end(templeVec));
+			auto min = std::min_element(std::begin(templeVec), std::end(templeVec));
+
+			if (*min == *max)
+			{
+				ui.widget->yAxis->setRange((*min) * 0.9, (*min) * 1.1);
+			}
+			else
+			{
+				ui.widget->yAxis->setRange((*min) * 1.1 - (*max) * 0.1, (*max) * 1.1 - (*min) * 0.1);
+			}
+			ui.widget->replot();
+		}
+		
+	}
+
+}
+
+void QDM_Interface::showSweepPic(cv::Mat showMat)
+{
+#ifdef FLCAMERA
+	int picNums = ui.lineEdit_PicNums->text().toInt();
+	cv::Mat tmp;
+	cv::resize(showMat, tmp, cv::Size(g_uiPicWidth, g_uiPicHeigth));
+	tmp /= 64 * picNums;
+	tmp.convertTo(tmp, CV_8U);
+	QImage img(tmp.data, tmp.cols, tmp.rows, tmp.step, QImage::Format_Grayscale8);
+	if (m_image_item)
+	{
+		m_scene->removeItem(m_image_item);
+		delete m_image_item;
+		m_image_item = 0;
+	}
+	m_image_item = m_scene->addPixmap(QPixmap::fromImage(img));
+#else
+	int picNums = ui.lineEdit_PicNums->text().toInt();
+	/*cv::Scalar meanValue = cv::mean(showMat);
+	double meanDouble = meanValue.val[0];
+	qDebug() << meanDouble;*/
+	cv::Mat tmp;
+	cv::resize(showMat, tmp, cv::Size(g_uiPicWidth, g_uiPicHeigth));
+	tmp /= 16 * picNums;
+	tmp.convertTo(tmp, CV_8U);
+	QImage img(tmp.data, tmp.cols, tmp.rows, tmp.step, QImage::Format_Grayscale8);
+	if (m_image_item)
+	{
+		m_scene->removeItem(m_image_item);
+		delete m_image_item;
+		m_image_item = 0;
+	}
+	m_image_item = m_scene->addPixmap(QPixmap::fromImage(img));
+#endif // FLCAMERA
+
+	
+
+
+
+}
+
+void QDM_Interface::clearPulse()
+{
+	ui.pushButton_StartSweepMeasure->setEnabled(false);
+	ui.pushButton_StartFixFreMeasure->setEnabled(false);
+	ui.pushButton_StopSweepMeasure->setEnabled(false);
+	ui.pushButton_StopFixFreMeasure->setEnabled(false);
+	if (pulseControl->pulseConnect())
+	{
+		pulseControl->clearPulse();
+		addLogEntry("停止脉冲!", ui.textEdit_Log);
+		
+	}
+	else
+	{
+		addLogEntry("连接脉冲卡失败!", ui.textEdit_Log);
+	}
+
+	if (false==m_isAllFixFre)
+	{
+		//if (ui.pushButton_ConnectCurrent->text() == ("连接LED"))
+		//{
+		//	addLogEntry("请连接LED!", ui.textEdit_Log);
+		//	ui.pushButton_StartSweepMeasure->setEnabled(true);
+		//	ui.pushButton_StartFixFreMeasure->setEnabled(true);
+		//	return;
+		//}
+		//else
+		//{
+		//	//关灯
+		//	LED->setOut(false);
+		//	Sleep(500);
+		//	LED->setOut(false);
+		//	Sleep(500);
+		//	ui.pushButton_CurrentOut->setText(("输出"));
+		//}
+
+
+
+		//关偏置磁场
+		/*if (ui.radioButton_Mag->isChecked())
+		{
+			if (ui.pushButton_ConnectCoilXYZ->text() == ("连接线圈"))
+			{
+				addLogEntry("请连接线圈!", ui.textEdit_Log);
+				ui.pushButton_StartSweepMeasure->setEnabled(true);
+				ui.pushButton_StartFixFreMeasure->setEnabled(true);
+				return;
+			}
+			else
+			{
+				coilX->setOut(false);
+				Sleep(500);
+				coilX->setOut(false);
+				Sleep(500);
+				ui.pushButton_CoilXOut->setText(("线圈X输出"));
+
+				coilY->setOut(false);
+				Sleep(500);
+				coilY->setOut(false);
+				Sleep(500);
+				ui.pushButton_CoilYOut->setText(("线圈Y输出"));
+
+				coilZ->setOut(false);
+				Sleep(500);
+				coilZ->setOut(false);
+				Sleep(500);
+				ui.pushButton_CoilZOut->setText(("线圈Z输出"));
+			}
+
+		}*/
+	}
+	
+
+	ui.pushButton_StartSweepMeasure->setEnabled(true);
+	ui.pushButton_StartFixFreMeasure->setEnabled(true);
+
+	ui.groupBox_camera->setEnabled(true);
+	ui.groupBox_coil->setEnabled(true);
+	ui.groupBox_wave->setEnabled(true);
+	ui.groupBox_MT->setEnabled(true);
+	ui.groupBox_Gs->setEnabled(true);
+	ui.groupBox_Connect->setEnabled(true);
+
+	if (false==m_isStopFix)
+	{
+		if (true == m_isAllFixFre)
+		{
+			g_SweepFreStart += g_SweepFreStep;
+			if ((g_SweepFreStart - g_SweepFreEnd) >= g_SweepFreStep - 0.00005)
+			{
+				//if (ui.pushButton_ConnectCurrent->text() == ("连接LED"))
+				//{
+				//	addLogEntry("请连接LED!", ui.textEdit_Log);
+				//	ui.pushButton_StartSweepMeasure->setEnabled(true);
+				//	ui.pushButton_StartFixFreMeasure->setEnabled(true);
+				//	return;
+				//}
+				//else
+				//{
+				//	//关灯
+				//	LED->setOut(false);
+				//	Sleep(500);
+				//	ui.pushButton_CurrentOut->setText(("输出"));
+				//}
+				////关偏置磁场
+				//if (ui.radioButton_Mag->isChecked())
+				//{
+				//	if (ui.pushButton_ConnectCoilXYZ->text() == ("连接线圈"))
+				//	{
+				//		addLogEntry("请连接线圈!", ui.textEdit_Log);
+				//		ui.pushButton_StartSweepMeasure->setEnabled(true);
+				//		ui.pushButton_StartFixFreMeasure->setEnabled(true);
+				//		return;
+				//	}
+				//	else
+				//	{
+				//		coilX->setOut(false);
+				//		Sleep(500);
+				//		ui.pushButton_CoilXOut->setText(("线圈X输出"));
+
+				//		coilY->setOut(false);
+				//		Sleep(500);
+				//		ui.pushButton_CoilYOut->setText(("线圈Y输出"));
+
+				//		coilZ->setOut(false);
+				//		Sleep(500);
+				//		ui.pushButton_CoilZOut->setText(("线圈Z输出"));
+				//	}
+
+				//}
+				addLogEntry("全频段点频结束!", ui.textEdit_Log);
+				m_setNums = 0;
+			}
+			else
+			{
+				ui.lineEdit_StartFre->setText(QString::number(g_SweepFreStart));
+				m_setNums = 1;
+				startAllFixFre();
+			}
+		}
+	}
+	
+}
+
+void QDM_Interface::showFixFreImg(cv::Mat onmat, cv::Mat offmat)
+{
+	
+	if (isAutoSave)
+	{
+		//保存16U图片
+		cv::Mat saveMat = onmat;
+		QString str = ui.lineEdit_SavePath->text() + "/" + "(on" + QString::number(currentIterNum * 2 + 0) + ")" + QString::number(g_FixedFre) + ".tiff";
+		QByteArray data = str.toLocal8Bit();
+		string strOn = string(data);
+		saveImage(onmat, strOn);
+		//保存16U图片
+		str = ui.lineEdit_SavePath->text() + "/" + "(off" + QString::number(currentIterNum * 2 + 1) + ")" + QString::number(g_FixedFre) + ".tiff";
+		data = str.toLocal8Bit();
+		string strOff = string(data);
+		saveImage(offmat, strOff);
+
+	}
+	if (0 == currentIterNum)
+	{
+		//初始化点频结构体
+		int width = g_Width;
+		int height = g_Height;
+		int type = CV_32FC1;
+		averMat = cv::Mat::zeros(height, width, type);
+		onTemp = cv::Mat::zeros(height, width, type);
+		offTemp = cv::Mat::zeros(height, width, type);
+
+	}
+	
+
+	
+	
+#pragma omp parallel for num_threads(threadNum)
+	for (int i = 0; i < onmat.rows; i++) {
+		for (int j = 0; j < onmat.cols; j++) {
+			// 在这里进行并行化的32位浮点数转换操作
+			onTemp.at<float>(i, j) += static_cast<float>(onmat.at<ushort>(i, j));
+			offTemp.at<float>(i, j) += static_cast<float>(offmat.at<ushort>(i, j));
+			averMat.at<float>(i, j) = onTemp.at<float>(i, j) / offTemp.at<float>(i, j); // 使用局部变量进行计算
+			
+		}
+	}
+
+
+	currentIterNum++;
+	
+	if (true)
+	{
+		//调用cv::resize函数进行调整大小操作。
+		cv::Mat fixFreImg;
+		cv::resize(averMat, fixFreImg, cv::Size(g_uiPicWidth, g_uiPicHeigth));
+		// 创建输出图像
+		cv::Mat normalizedImg(fixFreImg.size(), CV_8U);
+		// 计算归一化参数
+		double minVal, maxVal;
+		cv::minMaxLoc(fixFreImg, &minVal, &maxVal);
+		double alpha = 255.0 / (maxVal - minVal);
+		double beta = -minVal * alpha;
+		// 使用OpenMP并行化归一化操作
+#pragma omp parallel for num_threads(threadNum)
+		for (int i = 0; i < fixFreImg.rows; i++)
+		{
+			uchar* ptr = normalizedImg.ptr<uchar>(i);
+			float* fptr = fixFreImg.ptr<float>(i);
+			for (int j = 0; j < fixFreImg.cols; j++)
+			{
+				ptr[j] = cv::saturate_cast<uchar>(alpha * fptr[j] + beta);
+			}
+		}
+		//showimg
+		QImage img(normalizedImg.data, normalizedImg.cols, normalizedImg.rows, static_cast<int>(normalizedImg.step), QImage::Format_Grayscale8);
+		if (m_image_item)
+		{
+			m_scene->removeItem(m_image_item);
+			delete m_image_item;
+			m_image_item = 0;
+		}
+		m_image_item = m_scene->addPixmap(QPixmap::fromImage(img));
+	}
+	qDebug() << currentIterNum;
+	if (g_IterationTime==currentIterNum)
+	{
+		qDebug() << "save";
+		//TODO 修改成每个频率点的名字
+		saveImage(onTemp, "onMat.tiff");
+		saveImage(offTemp, "offMat.tiff");
+		//保存32F图片
+		QString str = "./" + QString::number(g_FixedFre) + ".tiff";
+		QByteArray data = str.toLocal8Bit();
+		string strtiff = string(data);
+		saveImage(averMat, strtiff);
+		
+	}
+	return;
+}
+
+void QDM_Interface::fastShowFixFreImg(int index, cv::Mat tmpmat)
+{
+	if (!isLockIn)
+	{
+		tmpmat.convertTo(tmpmat, CV_32FC1);
+		if ((index) % 2 == 0)
+		{
+			onTempNum++;
+			onTemp += tmpmat;
+		}
+		//奇数为关微波
+		if ((index) % 2 == 1)
+		{
+			offTempNum++;
+			offTemp += tmpmat;
+			averMat = onTemp / offTemp * (offTempNum / onTempNum);
+		}
+
+		if ((index) % 10 == 1)
+		{
+			cv::Mat fixFreImg;
+			cv::resize(averMat, fixFreImg, cv::Size(g_uiPicWidth, g_uiPicHeigth));
+			cv::Mat normalizedImg;
+			cv::normalize(fixFreImg, normalizedImg, 0, 255, cv::NORM_MINMAX, CV_8U);
+			QImage img(normalizedImg.data, normalizedImg.cols, normalizedImg.rows, static_cast<int>(normalizedImg.step), QImage::Format_Grayscale8);
+			if (m_image_item)
+			{
+				m_scene->removeItem(m_image_item);
+				delete m_image_item;
+				m_image_item = 0;
+			}
+			m_image_item = m_scene->addPixmap(QPixmap::fromImage(img));
+		}
+		if (g_IterationTime == index + 1)
+		{
+			qDebug() << "saveFixFreImg";
+			//保存32F图片
+			QString str = "./" + QString::number(g_FixedFre) + ".tiff";
+			QByteArray data = str.toLocal8Bit();
+			string strtiff = string(data);
+			saveImage(averMat, strtiff);
+
+		}
+	}
+	else
+	{
+		tmpmat.convertTo(tmpmat, CV_32FC1);
+		Mat mean, std;
+
+		double meanValue;
+		//if ((index) % 4 == 0)
+		//{
+		//	onTempNum++;
+		//	onTemp = tmpmat;
+		//	
+		//	meanStdDev(tmpmat, mean, std);
+		//	meanValue = mean.at<double>(0, 0);
+		//	qDebug() <<"1"<< meanValue;
+		//}
+		//if ((index) % 4 == 1)
+		//{
+		//	offTempNum++;
+		//	offTemp = tmpmat;
+		//	averMat_1 = onTemp/ offTemp;
+
+		//	meanStdDev(tmpmat, mean, std);
+		//	meanValue = mean.at<double>(0, 0);
+		//	qDebug() <<"2" << meanValue;
+		//}
+
+		//if ((index) % 4 == 2)
+		//{
+		//	onTempNum++;
+		//	onTemp = tmpmat;
+
+		//	meanStdDev(tmpmat, mean, std);
+		//	meanValue = mean.at<double>(0, 0);
+		//	qDebug() << "3" << meanValue;
+		//}
+		//if ((index) % 4 == 3)
+		//{
+		//	offTempNum++;
+		//	currentPulseNum= currentPulseNum +1.0;
+		//	offTemp = tmpmat;
+
+		//	meanStdDev(tmpmat, mean, std);
+		//	meanValue = mean.at<double>(0, 0);
+		//	qDebug() << "4" << meanValue;
+
+
+		//	averMat_2 = onTemp / offTemp;
+
+		//	meanStdDev(averMat_1, mean, std);
+		//	meanValue = mean.at<double>(0, 0);
+		//	qDebug() << "averMat_1" << meanValue;
+
+		//	meanStdDev(averMat_2, mean, std);
+		//	meanValue = mean.at<double>(0, 0);
+		//	qDebug() << "averMat_2" << meanValue;
+
+		//	divideMat = averMat_1 / averMat_2;
+		//	//subtract(averMat_2, averMat_1, divideMat);
+		//	meanStdDev(divideMat, mean, std);
+		//	meanValue = mean.at<double>(0, 0);
+		//	qDebug() << "divideMat" << meanValue;
+
+		//	sumMat += divideMat;
+		//	averMat = sumMat / currentPulseNum;
+
+		//	meanStdDev(averMat, mean, std);
+		//	meanValue = mean.at<double>(0, 0);
+		//	qDebug() << "averMat" << meanValue;
+		//}
+		/*cv::Mat tmpmat;
+		
+		cv::blur(tmpmat_old, tmpmat, cv::Size(2, 2));*/
+		//cv::GaussianBlur(tmpmat_old, tmpmat, cv::Size(3, 3),0);
+
+		if ((index) % 4 == 0)
+		{
+			onTempNum++;
+			onTemp += tmpmat;
+
+			meanStdDev(tmpmat, mean, std);
+			meanValue = mean.at<double>(0, 0);
+			qDebug() << "1" << meanValue;
+		}
+
+		if ((index) % 4 == 1)
+		{
+			offTempNum++;
+			offTemp += tmpmat;
+			averMat_1 = onTemp / offTemp;
+
+			meanStdDev(tmpmat, mean, std);
+			meanValue = mean.at<double>(0, 0);
+			qDebug() << "2" << meanValue;
+		}
+
+		if ((index) % 4 == 2)
+		{
+			onTempNum++;
+			onTemp_2 += tmpmat;
+
+			meanStdDev(tmpmat, mean, std);
+			meanValue = mean.at<double>(0, 0);
+			qDebug() << "3" << meanValue;
+		}
+		if ((index) % 4 == 3)
+		{
+			offTempNum++;
+			currentPulseNum = currentPulseNum + 1.0;
+			offTemp_2 += tmpmat;
+
+			meanStdDev(tmpmat, mean, std);
+			meanValue = mean.at<double>(0, 0);
+			qDebug() << "4" << meanValue;
+
+
+			averMat_2 = onTemp / onTemp_2;
+
+			meanStdDev(averMat_1, mean, std);
+			meanValue = mean.at<double>(0, 0);
+			qDebug() << "averMat_1" << meanValue;
+
+			meanStdDev(averMat_2, mean, std);
+			meanValue = mean.at<double>(0, 0);
+			qDebug() << "averMat_2" << meanValue;
+
+			averMat_3 = offTemp / offTemp_2;
+
+			//averMat = onTemp / offTemp_2;
+			averMat = onTemp_2 / offTemp_2;//3-4
+
+			//averMat_4 = onTemp_2 / offTemp_2;//3-4
+			averMat_4 = averMat_1 / averMat;//(1-2)-(3-4)
+			//averMat_1 = averMat_1 / currentPulseNum;//1-2
+			//averMat_2 = averMat_2 / currentPulseNum;//1-3
+			//averMat_3 = averMat_3 / currentPulseNum;//2-4
+			//
+			//averMat = averMat / currentPulseNum; //1-4
+
+			//averMat_4 = averMat_2 - averMat_3;//(1-3)-(2-4)
+
+			qDebug() << "currentPulseNum:" << currentPulseNum;
+
+			meanStdDev(averMat, mean, std);
+			meanValue = mean.at<double>(0, 0);
+			qDebug() << "averMat" << meanValue;
+		}
+
+		if ((index) % 8 == 1)
+		{
+
+			cv::Mat fixFreImg, averMat4_New;
+			//cv::resize(averMat_4, averMat4_New, cv::Size(), 0.5, 0.5);
+			//cv::resize(averMat, averMat_New, cv::Size(averMat.cols / 4, averMat.rows / 4), 0, 0, cv::INTER_AREA);
+			//cv::blur(averMat, averMat_New,cv::Size(3,3));
+			cv::resize(averMat_4, fixFreImg, cv::Size(g_uiPicWidth, g_uiPicHeigth));
+			cv::Mat normalizedImg;
+			cv::normalize(fixFreImg, normalizedImg, 0, 255, cv::NORM_MINMAX, CV_8U);
+			QImage img(normalizedImg.data, normalizedImg.cols, normalizedImg.rows, static_cast<int>(normalizedImg.step), QImage::Format_Grayscale8);
+			if (m_image_item)
+			{
+				m_scene->removeItem(m_image_item);
+				delete m_image_item;
+				m_image_item = 0;
+			}
+			m_image_item = m_scene->addPixmap(QPixmap::fromImage(img));
+		}
+		if (g_IterationTime * 4 == index + 1)
+		{
+			qDebug() << "saveFixFreImg";
+			//保存32F图片
+			//QString str = "./" + QString::number(g_FixedFre) + ".tiff";
+			//QByteArray data = str.toLocal8Bit();
+			//string strtiff = string(data);
+			////saveImage(averMat_New, strtiff);
+			//cv::imwrite(strtiff, averMat);
+
+
+			QString str = "./1-2.tiff";
+			QByteArray data = str.toLocal8Bit();
+			string strtiff = string(data);
+			cv::imwrite(strtiff, averMat_1);
+
+			str = "./1-3.tiff";
+			data = str.toLocal8Bit();
+			strtiff = string(data);
+			cv::imwrite(strtiff, averMat_2);
+
+			str = "./2-4.tiff";
+			data = str.toLocal8Bit();
+			strtiff = string(data);
+			cv::imwrite(strtiff, averMat_3);
+
+			str = "./3-4.tiff";
+			data = str.toLocal8Bit();
+			strtiff = string(data);
+			cv::imwrite(strtiff, averMat);
+
+			str = "./(1-2)-(3-4).tiff";
+			data = str.toLocal8Bit();
+			strtiff = string(data);
+			cv::imwrite(strtiff, averMat_4);
+
+		}
+	}
+}
+
+void QDM_Interface::sweepLostPic()
+{
+	addLogEntry("扫频过程中丢帧，请尝试增加脉冲中相机抓图间隔!", ui.textEdit_Log);
+}
+
+void QDM_Interface::fixLostPic()
+{
+	m_setNums = 0;
+	m_isStopFix = true;
+	addLogEntry("对比度过程中丢帧，请尝试增加脉冲中相机抓图间隔!", ui.textEdit_Log);
+}
+
+void QDM_Interface::sendPlus(int s)
+{
+	if (0== s)
+	{
+		Sleep(1);
+		/*int picNums = ui.lineEdit_PicNums->text().toInt();
+		pulseControl->startPulse(pulse_cycleTime, picNums-1, A0, pulse_A1, pulse_A2, 1);
+		qDebug() << "startPulse:"<< picNums-1;*/
+	
+		pulseControl->startPulse(pulse_cycleTime, 1, A0, pulse_A1, pulse_A2, 1);
+		qDebug() << "startPulse:" <<1;
+	}
+	else
+	{
+		Sleep(1);
+		pulseControl->startPulse(pulse_cycleTime, 1, pulse_A0, pulse_A1, pulse_A2, 1);
+		qDebug() << "startPulse-切频:1";
+	}
+	
+
+	
+}
+
+void QDM_Interface::changeLockState(bool isChecked)
+{
+	isLockIn = isChecked;
+}
+
+
+void QDM_Interface::importPicNoMag()
+{
+	QString dirName = QFileDialog::getExistingDirectory(this, ("选择导入照片目录"), "", QFileDialog::Option::ReadOnly);
+	if (dirName.isNull())
+	{
+		return;
+	}
+	QDir dir(dirName);
+	dir.setFilter(QDir::Files);
+	dir.setSorting(QDir::Time);
+
+	QFileInfoList list = dir.entryInfoList();
+
+	picType = 0;
+	picDataNoMag.clear();
+
+
+	QVector<QString>allFilepath;
+	QVector<double>allFre;
+	foreach(QFileInfo file, list)
+	{
+		QString fileName = file.fileName();
+		QString filePath = file.filePath();
+		allFilepath.push_back(filePath);
+		allFre.push_back(fileName.split(".tiff")[0].toDouble() * 1000);
+	}
+
+	//QByteArray data = allFilepath[0].toLocal8Bit();
+	//string tmpstr = string(data);
+	//cv::Mat image;     //创建一个空图像image
+	//image = cv::imread(tmpstr, cv::IMREAD_ANYDEPTH);  //读取文件夹中的图像
+
+	//灵敏度计算参数--单独读取offwave图片
+	QString str2 = dirName + "/offwave/offWave.tiff";
+	QByteArray data2 = str2.toLocal8Bit();
+	string strtiff = string(data2);
+	imageNoMag = cv::imread(strtiff, cv::IMREAD_ANYDEPTH);
+	if (!imageNoMag.empty()) {
+		// 读取成功
+		if (imageNoMag.depth() == CV_32F ) {
+			// 如果图像深度是32位，您可以进行相应的处理
+			cv::Scalar mean = cv::mean(imageNoMag);
+			offGrayValue = mean[0];
+			offGrayValueNoMag = offGrayValue;
+			ui.lineEdit_OffWaveValue->setText(QString::number(offGrayValue));
+		}
+		picCols = imageNoMag.cols;
+		picRows = imageNoMag.rows;
+		cv::Mat fixFreImg;
+		cv::resize(imageNoMag, fixFreImg, cv::Size(g_uiPicWidth, g_uiPicHeigth));
+		// 创建输出图像
+		cv::Mat normalizedImg(fixFreImg.size(), CV_8U);
+		// 计算归一化参数
+		double minVal, maxVal;
+		cv::minMaxLoc(fixFreImg, &minVal, &maxVal);
+		double alpha = 255.0 / (maxVal - minVal);
+		double beta = -minVal * alpha;
+		// 使用OpenMP并行化归一化操作
+#pragma omp parallel for num_threads(threadNum)
+		for (int i = 0; i < fixFreImg.rows; i++)
+		{
+			uchar* ptr = normalizedImg.ptr<uchar>(i);
+			float* fptr = fixFreImg.ptr<float>(i);
+			for (int j = 0; j < fixFreImg.cols; j++)
+			{
+				ptr[j] = cv::saturate_cast<uchar>(alpha * fptr[j] + beta);
+			}
+		}
+		//showimg
+		QImage img(normalizedImg.data, normalizedImg.cols, normalizedImg.rows, static_cast<int>(normalizedImg.step), QImage::Format_Grayscale8);
+		if (m_image_item)
+		{
+			m_scene->removeItem(m_image_item);
+			delete m_image_item;
+			m_image_item = 0;
+		}
+		m_image_item = m_scene->addPixmap(QPixmap::fromImage(img));
+		grayImg = img.copy();
+		
+	}
+	
+
+	
+
+#pragma omp parallel for num_threads(threadNum)
+	for (int i = 0; i < allFilepath.size(); i++)
+	{
+		QVector<float> resultVec;
+		CameraDataProcess::readTiff(allFilepath[i], g_Width, g_Height, resultVec);
+#pragma omp critical
+		{
+			picDataNoMag.insert(allFre[i], resultVec);
+		}
+	}
+
+	addLogEntry("加载基准磁场图片完成!", ui.textEdit_Log);
+	is_openWithMagImg = false;
+}
+
+
+void QDM_Interface::importPicWithMag()
+{
+	QString dirName = QFileDialog::getExistingDirectory(this, ("选择导入照片目录"), "", QFileDialog::Option::ReadOnly);
+	if (dirName.isNull())
+	{
+		return;
+	}
+	QDir dir(dirName);
+	dir.setFilter(QDir::Files);
+	dir.setSorting(QDir::Time);
+
+	QFileInfoList list = dir.entryInfoList();
+
+	picType = 1;
+	picDataWithMag.clear();
+
+
+	QVector<QString>allFilepath;
+	QVector<double>allFre;
+	foreach(QFileInfo file, list)
+	{
+		QString fileName = file.fileName();
+		QString filePath = file.filePath();
+		allFilepath.push_back(filePath);
+		allFre.push_back(fileName.split(".tiff")[0].toDouble() * 1000);
+	}
+
+	//QByteArray data = allFilepath[0].toLocal8Bit();
+	//string tmpstr = string(data);
+	//cv::Mat image;     //创建一个空图像image
+	//image = cv::imread(tmpstr, cv::IMREAD_ANYDEPTH);  //读取文件夹中的图像
+
+	//灵敏度计算参数--单独读取offwave图片
+	QString str2 = dirName + "/offwave/offWave.tiff";
+	QByteArray data2 = str2.toLocal8Bit();
+	string strtiff = string(data2);
+	imageWithMag = cv::imread(strtiff, cv::IMREAD_ANYDEPTH);
+	if (!imageWithMag.empty()) {
+		// 读取成功
+		if (imageWithMag.depth() == CV_32F ) {
+			// 如果图像深度是32位，您可以进行相应的处理
+			cv::Scalar mean = cv::mean(imageWithMag);
+			offGrayValue = mean[0];
+			offGrayValueWithMag = offGrayValue;
+			ui.lineEdit_OffWaveValue->setText(QString::number(offGrayValue));
+		}
+		picCols = imageWithMag.cols;
+		picRows = imageWithMag.rows;
+		cv::Mat fixFreImg;
+		cv::resize(imageWithMag, fixFreImg, cv::Size(g_uiPicWidth, g_uiPicHeigth));
+		// 创建输出图像
+		cv::Mat normalizedImg(fixFreImg.size(), CV_8U);
+		// 计算归一化参数
+		double minVal, maxVal;
+		cv::minMaxLoc(fixFreImg, &minVal, &maxVal);
+		double alpha = 255.0 / (maxVal - minVal);
+		double beta = -minVal * alpha;
+		// 使用OpenMP并行化归一化操作
+#pragma omp parallel for num_threads(threadNum)
+		for (int i = 0; i < fixFreImg.rows; i++)
+		{
+			uchar* ptr = normalizedImg.ptr<uchar>(i);
+			float* fptr = fixFreImg.ptr<float>(i);
+			for (int j = 0; j < fixFreImg.cols; j++)
+			{
+				ptr[j] = cv::saturate_cast<uchar>(alpha * fptr[j] + beta);
+			}
+		}
+
+		//showimg
+		QImage img(normalizedImg.data, normalizedImg.cols, normalizedImg.rows, static_cast<int>(normalizedImg.step), QImage::Format_Grayscale8);
+		if (m_image_item)
+		{
+			m_scene->removeItem(m_image_item);
+			delete m_image_item;
+			m_image_item = 0;
+		}
+		m_image_item = m_scene->addPixmap(QPixmap::fromImage(img));
+		grayImg = img.copy();
+
+
+	}
+	
+	
+#pragma omp parallel for num_threads(threadNum)
+	for (int i = 0; i < allFilepath.size(); i++)
+	{
+		QVector<float> resultVec;
+		CameraDataProcess::readTiff(allFilepath[i], g_Width, g_Height, resultVec);
+#pragma omp critical
+		{
+			picDataWithMag.insert(allFre[i], resultVec);
+		}
+	}
+
+	addLogEntry("加载待测磁场图片完成!", ui.textEdit_Log);
+	is_openWithMagImg = true;
+}
+
+
+
+
+void QDM_Interface::averODMRAnalysisNoMag()
+{
+	if (ui.widget->graphCount() != 0)
+	{
+		ui.widget->clearGraphs();
+	}
+	ui.widget->addGraph();
+	ui.widget->graph(0)->setPen(QPen(QColor(255, 115, 45, 255), 2));
+
+
+	ui.widget->xAxis->setRange(2700, 3100);
+	ui.widget->replot();
+	averODMRVec.clear();
+	templeVec.clear();
+	picDataNoMag_roi.clear();
+	vector<double> LSX, LSY;
+	if (!is_analyRoi)//无roi
+	{
+		roiHeight = g_Height;
+		roiWidth = g_Width;
+		auto iter = picDataNoMag.constBegin();
+		while (iter != picDataNoMag.constEnd())
+		{
+			QVector<float> m_Vec = iter.value();
+			double sum = std::accumulate(m_Vec.begin(), m_Vec.end(), 0.0);
+			double meanValue = sum / m_Vec.size();
+			drawSweepData(iter.key(), meanValue);
+			averODMRVec.insert(iter.key(), meanValue);
+			qDebug() << iter.key() << "," << meanValue;
+			iter++;
+			LSX.push_back(iter.key());
+			LSY.push_back(meanValue);
+		}
+	}
+	else
+	{
+		roiHeight = m_analyRoi.height;
+		roiWidth = m_analyRoi.width;
+		//TODO;roi单独保存一份数据
+		auto iter = picDataNoMag.constBegin();
+		while (iter != picDataNoMag.constEnd())
+		{
+			QVector<float> tmp_Vec = iter.value();
+			QVector<float> m_Vec;
+			for (int j = m_analyRoi.y; j < m_analyRoi.y + m_analyRoi.height; j++)
+			{
+				QVector<float> subVec = tmp_Vec.mid(j * picCols + m_analyRoi.x, m_analyRoi.width);
+				m_Vec.append(subVec);
+			}
+
+			picDataNoMag_roi.insert(iter.key(), m_Vec);
+			double sum = std::accumulate(m_Vec.begin(), m_Vec.end(), 0.0);
+			double meanValue = sum / m_Vec.size();
+			drawSweepData(iter.key(), meanValue);
+			averODMRVec.insert(iter.key(), meanValue);
+			qDebug() << iter.key() << "," << meanValue;
+			iter++;
+			LSX.push_back(iter.key());
+			LSY.push_back(meanValue);
+		}
+
+	}
+
+
+	is_openWithMagImg = false;
+	//自动寻找峰值点
+	const int LS_num = 5;
+	for (int i = 0; i < LS_num; i++)
+	{
+		LinearSmooth7(LSY, LSY.size());
+	}
+	QVector<point> peaks;
+	// 找到极小值点
+	std::vector<double> data;
+	for (int i = 10; i < LSY.size() - 10; i += 1) {
+		bool isMin = true;
+		for (int j = i - 10; j <= i + 10; j++) {
+			if (j != i && LSY[i] >= LSY[j]) {
+				isMin = false;
+				break;
+			}
+		}
+
+		if (isMin) {
+			point peak = { LSX[i], LSY[i] };
+			data.push_back(peak.y);
+			peaks.push_back(peak);
+		}
+	}
+
+	// 使用 std::sort 对 vector<double> 进行排序
+	std::sort(data.begin(), data.end());
+	if (data.size() < 7)
+	{
+		return;
+	}
+	// 筛选出对应的峰值点
+	QVector<point> finalPeaks;
+	for (int i = 0; i < peaks.size(); ++i) {
+		if (peaks[i].y <= data[7])
+		{
+			finalPeaks.push_back(peaks[i]);
+		}
+	}
+
+
+
+	for (int i = 0; i < 8; i++)
+	{
+		paraNoMag[3 * i + 0] = finalPeaks[i].y;
+		paraNoMag[3 * i + 1] = finalPeaks[i].x;
+		paraNoMag[3 * i + 2] = 30;
+	}
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			ui.tableWidget_ParaNoMag->item(i, j)->setText(QString::number(paraNoMag[3 * i + j]));
+		}
+	}
+
+}
+
+void QDM_Interface::averODMRAnalysisWithMag()
+{
+
+	if (ui.widget->graphCount() != 0)
+	{
+		ui.widget->clearGraphs();
+	}
+	ui.widget->addGraph();
+	ui.widget->graph(0)->setPen(QPen(QColor(255, 115, 45, 255), 2));
+
+
+	ui.widget->xAxis->setRange(2700, 3100);
+	ui.widget->replot();
+	averODMRVec.clear();
+	templeVec.clear();
+	picDataWithMag_roi.clear();
+	vector<double> LSX, LSY;
+	if (!is_analyRoi)//无roi
+	{
+		roiHeight = g_Height;
+		roiWidth = g_Width;
+		auto iter = picDataWithMag.constBegin();
+		while (iter != picDataWithMag.constEnd())
+		{
+			QVector<float> m_Vec = iter.value();
+			double sum = std::accumulate(m_Vec.begin(), m_Vec.end(), 0.0);
+			double meanValue = sum / m_Vec.size();
+			drawSweepData(iter.key(), meanValue);
+			qDebug() << iter.key() << "," << meanValue;
+			averODMRVec.insert(iter.key(), meanValue);
+			iter++;
+			//自动寻找峰值点
+			LSX.push_back(iter.key());
+			LSY.push_back(meanValue);
+		}
+
+	}
+	else
+	{
+		roiHeight = m_analyRoi.height;
+		roiWidth = m_analyRoi.width;
+		//TODO;roi单独保存一份数据
+		auto iter = picDataWithMag.constBegin();
+		while (iter != picDataWithMag.constEnd())
+		{
+			//m_analyRoi
+			QVector<float> tmp_Vec = iter.value();
+			QVector<float> m_Vec;
+
+
+			for (int j = m_analyRoi.y; j < m_analyRoi.y + m_analyRoi.height; j++)
+			{
+				QVector<float> subVec = tmp_Vec.mid(j * picCols + m_analyRoi.x, m_analyRoi.width);
+				m_Vec.append(subVec);
+			}
+
+			picDataWithMag_roi.insert(iter.key(), m_Vec);
+			double sum = std::accumulate(m_Vec.begin(), m_Vec.end(), 0.0);
+			double meanValue = sum / m_Vec.size();
+			drawSweepData(iter.key(), meanValue);
+			averODMRVec.insert(iter.key(), meanValue);
+			qDebug() << iter.key() << "," << meanValue;
+			iter++;
+			//自动寻找峰值点
+			LSX.push_back(iter.key());
+			LSY.push_back(meanValue);
+		}
+	}
+	is_openWithMagImg = true;
+	//自动寻找峰值点
+	const int LS_num = 5;
+	for (int i = 0; i < LS_num; i++)
+	{
+
+		LinearSmooth7(LSY, LSY.size());
+	}
+	QVector<point> peaks;
+	// 找到极小值点
+	std::vector<double> data;
+	for (int i = 10; i < LSY.size() - 10; i += 1) {
+		bool isMin = true;
+		for (int j = i - 10; j <= i + 10; j++) {
+			if (j != i && LSY[i] >= LSY[j]) {
+				isMin = false;
+				break;
+			}
+		}
+
+		if (isMin) {
+			point peak = { LSX[i], LSY[i] };
+			data.push_back(peak.y);
+			peaks.push_back(peak);
+		}
+	}
+	// 使用 std::sort 对 vector<double> 进行排序
+	std::sort(data.begin(), data.end());
+
+	if (data.size() < 7)
+	{
+		return;
+	}
+	// 筛选出对应的峰值点
+	QVector<point> finalPeaks;
+	for (int i = 0; i < peaks.size(); ++i) {
+		if (peaks[i].y <= data[7])
+		{
+			finalPeaks.push_back(peaks[i]);
+		}
+	}
+	for (int i = 0; i < 8; i++)
+	{
+		paraWithMag[3 * i + 0] = finalPeaks[i].y;
+		paraWithMag[3 * i + 1] = finalPeaks[i].x;
+		paraWithMag[3 * i + 2] = 30;
+	}
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			ui.tableWidget_ParaWithMag->item(i, j)->setText(QString::number(paraWithMag[3 * i + j]));
+		}
+	}
+}
+
+void QDM_Interface::getInitParaNoMag()
+{
+	if (0 == averODMRVec.size())
+	{
+		//没有做整体ODMR分析，数据为空，不处理
+		return;
+	}
+	QVector<double> x_Vec, y_Vec;
+	QMap<double, double >::const_iterator iter = averODMRVec.constBegin();
+	while (iter != averODMRVec.constEnd())
+	{
+		x_Vec.push_back(iter.key());
+		y_Vec.push_back(iter.value());
+		iter++;
+	}
+
+	double opts[LM_OPTS_SZ], info[LM_INFO_SZ];
+	opts[0] = LM_INIT_MU; opts[1] = 1E-15;
+	opts[2] = 1E-15; opts[3] = 1E-20;
+	opts[4] = LM_DIFF_DELTA;
+	int n = x_Vec.size();
+	int m = 25;
+	QList<double> resultDataList;
+
+	paraNoMag[24] = -10;
+	for (int i = 0; i < 8; i++)
+	{
+		paraNoMag[3 * i] = paraNoMag[3 * i] - paraNoMag[24];
+	}
+
+	ori_paraNoMag.clear();
+	for (int i = 0; i < 25; i++)
+	{
+		ori_paraNoMag.push_back(paraNoMag[i]);
+	}
+
+	int ret = dlevmar_dif(gaussianPara, &paraNoMag[0], &y_Vec[0], m, n, 500, NULL, info,
+		NULL, NULL, (void*)&x_Vec[0]);
+
+	/*int ret2 = CameraDataProcess::LevmarDif(&paraNoMag[0], &y_Vec[0], m, n, 500, NULL, info,
+		NULL, NULL, (void*)&x_Vec[0]);*/
+
+	for (int i = 0; i < x_Vec.size(); i++)
+	{
+		double result = 0;
+		for (int j = 0; j < 8; j++)
+		{
+			result += paraNoMag[j * 3] * exp(-pow(x_Vec[i] - paraNoMag[j * 3 + 1], 2) / paraNoMag[j * 3 + 2]);
+		}
+		result += paraNoMag[24];
+		resultDataList.push_back(result);
+	}
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			ui.tableWidget_ParaNoMag->item(i, j)->setText(QString::number(paraNoMag[3 * i + j]));
+		}
+	}
+
+
+	if (ui.widget->graphCount() > 1)
+	{
+		ui.widget->removeGraph(1);
+	}
+	ui.widget->replot();
+	ui.widget->addGraph();
+	ui.widget->graph(1)->setPen(QPen(QColor(0, 255, 0, 255), 2));
+	for (int i = 0; i < resultDataList.size(); i++)
+	{
+		ui.widget->graph(1)->addData(x_Vec[i], resultDataList[i]);
+	}
+	ui.widget->replot();
+
+}
+
+void QDM_Interface::getInitParaWithMag()
+{
+	if (0 == averODMRVec.size())
+	{
+		//没有做整体ODMR分析，数据为空，不处理
+		return;
+	}
+	QVector<double> x_Vec, y_Vec;
+	QMap<double, double >::const_iterator iter = averODMRVec.constBegin();
+	while (iter != averODMRVec.constEnd())
+	{
+		x_Vec.push_back(iter.key());
+		y_Vec.push_back(iter.value());
+		iter++;
+	}
+
+	double opts[LM_OPTS_SZ], info[LM_INFO_SZ];
+	opts[0] = LM_INIT_MU; opts[1] = 1E-15;
+	opts[2] = 1E-15; opts[3] = 1E-20;
+	opts[4] = LM_DIFF_DELTA;
+	int n = x_Vec.size();
+	int m = 25;
+	QList<double> resultDataList;
+
+	paraWithMag[24] = -10;
+	paraWithMag[24] = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		paraWithMag[3 * i] = paraWithMag[3 * i] - paraWithMag[24];
+	}
+
+	ori_paraWithMag.clear();
+	for (int i = 0; i < 25; i++)
+	{
+		ori_paraWithMag.push_back(paraWithMag[i]);
+	}
+
+
+	int ret = dlevmar_dif(gaussianPara, &paraWithMag[0], &y_Vec[0], m, n, 500, NULL, info,
+		NULL, NULL, (void*)&x_Vec[0]);
+
+	/*int ret2 = CameraDataProcess::LevmarDif(&paraWithMag[0], &y_Vec[0], m, n, 500, NULL, info,
+		NULL, NULL, (void*)&x_Vec[0]);*/
+
+
+
+	for (int i = 0; i < x_Vec.size(); i++)
+	{
+		double result = 0;
+		for (int j = 0; j < 8; j++)
+		{
+			result += paraWithMag[j * 3] * exp(-pow(x_Vec[i] - paraWithMag[j * 3 + 1], 2) / paraWithMag[j * 3 + 2]);
+		}
+		result += paraWithMag[24];
+		resultDataList.push_back(result);
+	}
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			ui.tableWidget_ParaWithMag->item(i, j)->setText(QString::number(paraWithMag[3 * i + j]));
+		}
+	}
+
+	if (ui.widget->graphCount() > 1)
+	{
+		ui.widget->removeGraph(1);
+	}
+	ui.widget->replot();
+	ui.widget->addGraph();
+	ui.widget->graph(1)->setPen(QPen(QColor(0, 255, 0, 255), 2));
+	for (int i = 0; i < resultDataList.size(); i++)
+	{
+		ui.widget->graph(1)->addData(x_Vec[i], resultDataList[i]);
+	}
+	ui.widget->replot();
+}
+
+
+void QDM_Interface::gaussianPara(double* p, double* x, int m, int n, void* data)
+{
+	///8个高斯峰叠加的函数/////////////////////////////////	
+	double* data1 = (double*)data;
+
+	for (int i = 0; i < n; i++)
+	{
+		x[i] = 0;
+		for (int j = 0; j < 8; j++)
+		{
+			x[i] += p[j * 3] * exp(-pow(data1[i] - p[j * 3 + 1], 2) / p[j * 3 + 2]);
+		}
+
+		x[i] += p[24];
+	}
+
+}
+void QDM_Interface::showProgress(int i, int countsize)
+{
+	float tmpscale = 100.0 / countsize;
+	ui.progressBar->setValue(i*tmpscale);
+	QCoreApplication::processEvents(); // 使应用程序能够响应其他事件
+
+}
+void QDM_Interface::changePara(int row, int col)
+{
+	QTableWidget* widget = qobject_cast<QTableWidget*>(sender());
+	if (widget->objectName() == "tableWidget_ParaNoMag")
+	{
+
+		paraNoMag[row * 3 + col] = ui.tableWidget_ParaNoMag->item(row, col)->text().toDouble();
+	}
+	else
+	{
+		paraWithMag[row * 3 + col] = ui.tableWidget_ParaWithMag->item(row, col)->text().toDouble();
+	}
+
+}
+
+void QDM_Interface::importParaWithMag()
+{
+	QString runPath = QCoreApplication::applicationDirPath();//获取项目的根路径
+	QString file_name = QFileDialog::getOpenFileName(this, ("选择文件"), runPath, "Text Files(*.dat)", nullptr, QFileDialog::DontResolveSymlinks);
+	if (file_name == "")
+		return;
+	QFile myFile(file_name);
+
+	//读取文件
+	if (!myFile.open(QIODevice::ReadOnly))
+	{
+		/*qDebug() << myFile.errorString();*/
+	}
+
+	QTextStream textStream(&myFile);
+	textStream.setDevice(&myFile);
+	int count_line = 0;						//文件行数
+	paraWithMag.clear();
+	while (!textStream.atEnd())
+	{
+		QString str = textStream.readLine();
+		QString str_first = *str.begin();
+		if (str_first == "%")
+		{
+			continue;
+		}
+
+		double str1 = str.split(" ", QString::SkipEmptyParts)[0].toDouble();
+		double str2 = str.split(" ", QString::SkipEmptyParts)[1].toDouble();
+		double str3 = str.split(" ", QString::SkipEmptyParts)[2].toDouble();
+		paraWithMag.push_back(str1);
+		paraWithMag.push_back(str2);
+		paraWithMag.push_back(str3);
+		count_line++;
+
+	}
+	textStream.seek(0);
+	paraWithMag.push_back(0.0);
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			/*QTableWidgetItem* item = new QTableWidgetItem(QString::number(paraWithMag[i * 3 + j]));
+			ui.tableWidget_ParaWithMag->setItem(i, j, item);*/
+			ui.tableWidget_ParaWithMag->item(i, j)->setText(QString::number(paraWithMag[3 * i + j]));
+		}
+	}
+
+	
+
+}
+
+void QDM_Interface::importParaNoMag()
+{
+	QString runPath = QCoreApplication::applicationDirPath();//获取项目的根路径
+	QString file_name = QFileDialog::getOpenFileName(this, ("选择文件"), runPath, "Text Files(*.dat)", nullptr, QFileDialog::DontResolveSymlinks);
+	if (file_name == "")
+		return;
+	QFile myFile(file_name);
+
+	//读取文件
+	if (!myFile.open(QIODevice::ReadOnly))
+	{
+		/*qDebug() << myFile.errorString();*/
+	}
+
+	QTextStream textStream(&myFile);
+	textStream.setDevice(&myFile);
+	int count_line = 0;						//文件行数
+	paraNoMag.clear();
+	while (!textStream.atEnd())
+	{
+		QString str = textStream.readLine();
+		QString str_first = *str.begin();
+		if (str_first == "%")
+		{
+			continue;
+		}
+
+		double str1 = str.split(" ", QString::SkipEmptyParts)[0].toDouble();
+		double str2 = str.split(" ", QString::SkipEmptyParts)[1].toDouble();
+		double str3 = str.split(" ", QString::SkipEmptyParts)[2].toDouble();
+		paraNoMag.push_back(str1);
+		paraNoMag.push_back(str2);
+		paraNoMag.push_back(str3);
+		count_line++;
+
+	}
+	textStream.seek(0);
+	paraNoMag.push_back(0.0);
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			/*QTableWidgetItem* item = new QTableWidgetItem(QString::number(paraNoMag[i * 3 + j]));
+			ui.tableWidget_ParaNoMag->setItem(i, j, item);*/
+			ui.tableWidget_ParaNoMag->item(i, j)->setText(QString::number(paraNoMag[3 * i + j]));
+		}
+	}
+}
+
+void QDM_Interface::saveParaNoMag()
+{
+	//TODO 保存文件
+	QString savePath = QCoreApplication::applicationDirPath(); // 获取项目的根路径
+	QString saveFileName = QFileDialog::getSaveFileName(this, tr("保存文件"), savePath, tr("Text Files(*.dat)"));
+
+	if (saveFileName.isEmpty()) {
+		return;
+	}
+
+	QFile saveFile(saveFileName);
+	if (!saveFile.open(QIODevice::WriteOnly)) {
+		// 文件打开失败
+		return;
+	}
+
+	QTextStream out(&saveFile);
+	for (int i = 0; i < ui.tableWidget_ParaNoMag->rowCount(); i++) {
+		for (int j = 0; j < ui.tableWidget_ParaNoMag->columnCount(); j++) {
+			QTableWidgetItem* item = ui.tableWidget_ParaNoMag->item(i, j);
+			if (item) {
+				out << item->text() << " ";
+			}
+		}
+		out << endl;
+	}
+
+	saveFile.close();
+}
+
+void QDM_Interface::saveParaWithMag()
+{
+	//TODO 保存文件
+	QString savePath = QCoreApplication::applicationDirPath(); // 获取项目的根路径
+	QString saveFileName = QFileDialog::getSaveFileName(this, tr("保存文件"), savePath, tr("Text Files(*.dat)"));
+
+	if (saveFileName.isEmpty()) {
+		return;
+	}
+
+	QFile saveFile(saveFileName);
+	if (!saveFile.open(QIODevice::WriteOnly)) {
+		// 文件打开失败
+		return;
+	}
+
+	QTextStream out(&saveFile);
+	for (int i = 0; i < ui.tableWidget_ParaWithMag->rowCount(); i++) {
+		for (int j = 0; j < ui.tableWidget_ParaWithMag->columnCount(); j++) {
+			QTableWidgetItem* item = ui.tableWidget_ParaWithMag->item(i, j);
+			if (item) {
+				out << item->text() << " ";
+			}
+		}
+		out << endl;
+	}
+
+	saveFile.close();
+}
+
+void QDM_Interface::loadNoMagData()
+{
+	QString runPath = QCoreApplication::applicationDirPath();//获取项目的根路径
+	QString file_name = QFileDialog::getOpenFileName(this, ("选择文件"), runPath, "Text Files(*.dat)", nullptr, QFileDialog::DontResolveSymlinks);
+	if (file_name == "")
+		return;
+	QFile myFile(file_name);
+
+	//读取文件
+	if (!myFile.open(QIODevice::ReadOnly))
+	{
+		
+	}
+
+	QTextStream textStream(&myFile);
+	textStream.setDevice(&myFile);
+	int count_line = 0;						//文件行数
+	vector<double> params;
+
+	while (!textStream.atEnd())
+	{
+		QString str = textStream.readLine();
+		QString str_first = *str.begin();
+		if (str_first == "%")
+		{
+			continue;
+		}
+		double str1 = str.split(" ", QString::SkipEmptyParts)[0].toDouble();
+		params.push_back(str1);
+		count_line++;
+		if (count_line>=8)
+		{
+			break;
+		}
+	}
+	textStream.seek(0);
+	resultFreNoMag.resize(g_Width*g_Height);
+
+	for (int i=0;i<g_Width*g_Height;i++)
+	{
+		resultFreNoMag[i] = params;
+	}
+
+}
+
+
+
+
+void QDM_Interface::setDataDimension(QString)
+{
+	dataDimension = ui.lineEdit_DataDimension->text().toInt();
+}
+
+
+
+bool QDM_Interface::findAllSinglePeak(vector<double> x_Vec, vector<double> y_Vec, vector<int>& peakIndexVec)
+{
+	double totalValue = std::accumulate(y_Vec.begin(), y_Vec.end(), 0.0);
+	double averValue = totalValue / y_Vec.size();
+	averValue = paraNoMag[24];
+	averValue = 1;
+
+	QList<int> crossIndexList;
+	while (crossIndexList.count() != 16)
+	{
+		crossIndexList.clear();
+		for (int i = 1; i < y_Vec.size(); i++)
+		{
+
+			if ((y_Vec[i] - averValue) * (y_Vec[i - 1] - averValue) < 0)
+			{
+				crossIndexList.append(i);
+				i += 6;
+			}
+		}
+
+		averValue -= 0.0001;
+		if (averValue <= 0.8)
+		{
+
+			return false;
+		}
+	}
+
+
+	for (int i = 0; i < crossIndexList.count() - 1; i = i + 2)
+	{
+
+		int index = min_element(y_Vec.begin() + crossIndexList[i], y_Vec.begin() + crossIndexList[i + 1]) - y_Vec.begin();
+		peakIndexVec.push_back(index);
+	}
+
+	return true;
+}
+
+bool QDM_Interface::findAllSinglePeak_auto(vector<double> x_Vec, vector<double> y_Vec, vector<int>& peakIndexVec)
+{
+	peakIndexVec.resize(8, 0.0);
+	//曲线平滑次数
+	const int LS_num = 5;
+	for (int i = 0; i < LS_num; i++)
+	{
+		LinearSmooth7(y_Vec, y_Vec.size());
+	}
+
+	vector<point> peaks;
+	for (int i = 10; i < y_Vec.size() - 10; i += 1) {
+		bool isMin = true;
+		for (int j = i - 10; j <= i + 10; j++) {
+			if (j != i && y_Vec[i] >= y_Vec[j]) {
+				isMin = false;
+				break;
+			}
+		}
+
+		if (isMin) {
+			point peak = { x_Vec[i], y_Vec[i] };
+			peaks.push_back(peak);
+		}
+	}
+
+	// 筛选出对应的峰值点-x
+	vector<point> finalPeaks;
+	vector<double>initx;
+	if (is_openWithMagImg)
+	{
+		initx = paraWithMag;
+	}
+	else
+	{
+		initx = paraNoMag;
+	}
+	QVector<double> uniqueXCoords;
+	//判断自动拟合找出的x与初始参数相差多少，若大于20则找错8个峰
+	for (int i = 0; i < peaks.size(); ++i)
+	{
+		bool isUnique = true;
+		for (int j = 0; j < 8; j++)
+		{
+			double d = abs(peaks[i].x - initx[3 * j + 1]);
+			if (d < 30)
+			{
+				for (int k = 0; k < uniqueXCoords.size(); ++k) {
+					if (peaks[i].x == uniqueXCoords[k]) {
+						isUnique = false;
+						break;
+					}
+				}
+				if (isUnique) {
+					finalPeaks.push_back(peaks[i]);
+					uniqueXCoords.push_back(peaks[i].x);
+				}
+
+			}
+		}
+	}
+	std::sort(finalPeaks.begin(), finalPeaks.end(), compareX);
+
+	QVector<point> finalPeaks2(8);
+	if (finalPeaks.size()<8)
+	{
+		return false;
+	}
+	for (int i = 0; i < 8; i++)
+	{
+		double mind = 100000;
+		int index = 0;
+		for (int j = 0; j < finalPeaks.size(); j++)
+		{
+			double tmpd = abs(finalPeaks[j].x - initx[3 * i + 1]);
+			if (tmpd < mind)
+			{
+				mind = tmpd;
+				index = j;
+			}
+		}
+		finalPeaks2[i] = finalPeaks[index];
+	}
+	
+
+
+	for (int i = 0; i < finalPeaks2.size(); i++)
+	{
+		//qDebug() << finalPeaks[i].x<<"_"<< finalPeaks[i].y;
+		int index = findIndex(x_Vec, finalPeaks2[i].x);
+		peakIndexVec[i] = index;
+	}
+	return true;
+}
+
+int QDM_Interface::findIndex(const std::vector<double>& data, double value)
+{
+	auto it = std::find(data.begin(), data.end(), value);
+	if (it != data.end()) {
+		return std::distance(data.begin(), it);
+	}
+	else {
+		// 如果未找到，则返回-1表示未找到
+		return -1;
+	}
+}
+
+
+void QDM_Interface::startAnalysisNoMag()
+{
+	addLogEntry("开始计算基准磁场!", ui.textEdit_Log);
+	showProgress(0, 1);
+	ui.progressBar->show();
+	setDisabled(true);
+	int tmpSize = 0;
+
+	if (0 == picDataNoMag.size())
+	{
+		setDisabled(false);
+		ui.progressBar->hide();
+		return;
+	}
+	cv::Mat matNoMag, matNoMag_Ori;
+	freVec.clear();
+	resultFreNoMag.clear();
+
+	vector<vector<double>> freAxisDataVec;
+
+	if (!is_analyRoi)
+	{
+
+
+		auto iter = picDataNoMag.constBegin();
+		while (iter != picDataNoMag.constEnd())
+		{
+			vector<float> temp = iter.value().toStdVector();
+			matNoMag_Ori = cv::Mat(temp);
+			matNoMag_Ori = matNoMag_Ori.reshape(0, picRows);
+			cv::resize(matNoMag_Ori, matNoMag, cv::Size(picCols / dataDimension, picRows / dataDimension), 0, 0, cv::INTER_AREA);
+			freAxisDataVec.push_back((vector<double>)(matNoMag.reshape(0, 1)));
+			freVec.push_back(iter.key());
+			iter++;
+
+			tmpSize++;
+			showProgress(tmpSize, picDataNoMag.size() / 0.9);
+		}
+	}
+	else
+	{
+		auto iter = picDataNoMag_roi.constBegin();
+		while (iter != picDataNoMag_roi.constEnd())
+		{
+			vector<float> temp = iter.value().toStdVector();
+			matNoMag_Ori = cv::Mat(temp);
+			matNoMag_Ori = matNoMag_Ori.reshape(0, m_analyRoi.height);
+			cv::resize(matNoMag_Ori, matNoMag, cv::Size(m_analyRoi.width / dataDimension, m_analyRoi.height / dataDimension), 0, 0, cv::INTER_AREA);
+			freAxisDataVec.push_back((vector<double>)(matNoMag.reshape(0, 1)));
+			freVec.push_back(iter.key());
+			iter++;
+
+			tmpSize++;
+			showProgress(tmpSize, picDataNoMag_roi.size() / 0.9);
+		}
+	}
+
+	double opts[LM_OPTS_SZ], info[LM_INFO_SZ];
+	opts[0] = LM_INIT_MU; opts[1] = 1E-15;
+	opts[2] = 1E-15; opts[3] = 1E-20;
+	opts[4] = LM_DIFF_DELTA;
+	int n = freVec.size();
+	int m = 25;
+
+
+	resultFreNoMag.resize(freAxisDataVec[0].size());
+#pragma omp parallel for num_threads(threadNum)
+	for (int i = 0; i < freAxisDataVec[0].size(); i++)
+	{
+
+		vector<double> freNoMag = paraNoMag;
+		vector<double> lastFre = paraNoMag;
+
+		vector<double> zData(freAxisDataVec.size(), 0.0);
+		vector<double> m_Vec(8, 0.0);
+		for (int j = 0; j < freAxisDataVec.size(); j++)
+		{
+
+			zData[j] = freAxisDataVec[j][i];
+		}
+		lastFre = freNoMag; //保留前一组参数，如果该次迭代失败，使用前一组参数作为该组参数
+		int ret = dlevmar_dif(gaussianPara, &freNoMag[0], &zData[0], m, n, 800, NULL, info,
+			NULL, NULL, (void*)&freVec[0]);
+
+
+		if (ret != -1 && ret != 800)
+		{
+
+			for (int j = 0; j < 8; j++)
+			{
+
+				m_Vec[j] = freNoMag[1 + 3 * j];
+			}
+
+		}
+		else
+		{
+
+			vector<int> indexVec;
+
+			bool isEightPeak = findAllSinglePeak_auto(freVec, zData, indexVec);
+			if (!isEightPeak)
+			{
+				qDebug() << i << "_" << ret << "SecondFit Failed:no 8 Peaks";
+				////保存文件
+				//QString saveFileName = "NoMag_no8peaks" + QString::number(i) + ".dat";
+				//QFile saveFile(saveFileName);
+				//if (!saveFile.open(QIODevice::WriteOnly)) {
+				//	// 文件打开失败
+				//}
+				//QTextStream out(&saveFile);
+				//for (int i = 0; i < freVec.size(); i++) {
+
+				//	out << freVec[i] << "," << zData[i] << endl;
+
+				//}
+				//saveFile.close();
+				for (int j = 0; j < 8; j++)
+				{
+
+					//m_Vec[j] = lastFre[1 + 3 * j];
+					//找不到8个峰就使用第一次拟合结果
+					m_Vec[j] = freNoMag[1 + 3 * j];
+				}
+			}
+			else
+			{
+				for (int j = 0; j < 8; j++)
+				{
+
+					freNoMag[3 * j] = zData.at(indexVec[j]) - paraNoMag[24];
+					freNoMag[3 * j + 1] = freVec.at(indexVec[j]);
+					freNoMag[3 * j + 2] = paraNoMag[3 * j + 2];
+				}
+				freNoMag[24] = paraNoMag[24];
+				//test
+				lastFre = freNoMag;
+				ret = dlevmar_dif(gaussianPara, &freNoMag[0], &zData[0], m, n, 1500, NULL, info,
+					NULL, NULL, (void*)&freVec[0]);
+				if (ret != -1 && ret != 1500)
+				{
+					for (int j = 0; j < 8; j++)
+					{
+
+						m_Vec[j] = freNoMag[1 + 3 * j];
+					}
+
+				}
+				else
+				{
+
+					//QString saveFileName = "NoMag_FAIL_" + QString::number(i) + ".dat";
+					//QFile saveFile(saveFileName);
+					//if (!saveFile.open(QIODevice::WriteOnly)) {
+					//	// 文件打开失败
+					//}
+					//QTextStream out(&saveFile);
+					//for (int i = 0; i < freVec.size(); i++) {
+
+					//	out << freVec[i] << "," << zData[i] << endl;
+
+					//}
+					//saveFile.close();
+
+					for (int j = 0; j < 8; j++)
+					{
+						qDebug() << freNoMag[3 * j] + 1 << "," << freNoMag[3 * j + 1] << "," << freNoMag[3 * j + 2] << endl;
+
+					}
+
+					for (int j = 0; j < 8; j++)
+					{
+
+						//使用1500次拟合结果
+						m_Vec[j] = freNoMag[1 + 3 * j];
+						//使用第二次自动拟合结果
+						//m_Vec[j] = lastFre[1 + 3 * j];
+					}
+					qDebug() << i << "_" << ret << "SecondFit Failed";
+				}
+			}
+
+		}
+
+		resultFreNoMag[i] = m_Vec;
+	}
+
+	showProgress(1, 1);
+	setDisabled(false);
+	ui.progressBar->hide();
+	addLogEntry("计算基准磁场完成!", ui.textEdit_Log);
+}
+
+void QDM_Interface::startAnalysisWithMag()
+{
+	addLogEntry("开始计算待测磁场!", ui.textEdit_Log);
+	showProgress(0, 1);
+	ui.progressBar->show();
+	setDisabled(true);
+	int tmpSize = 0;
+	if (0 == picDataWithMag.size())
+	{
+		ui.progressBar->hide();
+		setDisabled(false);
+		return;
+	}
+	cv::Mat matWithMag, matWithMag_Ori;
+	freVec.clear();
+	resultFreWithMag.clear();
+	vector<vector<double>> freAxisDataVec;
+
+	if (!is_analyRoi)
+	{
+		auto iter = picDataWithMag.constBegin();
+		while (iter != picDataWithMag.constEnd())
+		{
+			vector<float> temp = iter.value().toStdVector();
+			matWithMag_Ori = cv::Mat(temp);
+			matWithMag_Ori = matWithMag_Ori.reshape(0, picRows);
+			cv::resize(matWithMag_Ori, matWithMag, cv::Size(picCols / dataDimension, picRows / dataDimension), 0, 0, cv::INTER_AREA);
+			freAxisDataVec.push_back((vector<double>)(matWithMag.reshape(0, 1)));
+			freVec.push_back(iter.key());
+			iter++;
+
+			tmpSize++;
+			showProgress(tmpSize, picDataWithMag.size() / 0.9);
+		}
+	}
+	else
+	{
+		auto iter = picDataWithMag_roi.constBegin();
+		while (iter != picDataWithMag_roi.constEnd())
+		{
+			vector<float> temp = iter.value().toStdVector();
+			matWithMag_Ori = cv::Mat(temp);
+			matWithMag_Ori = matWithMag_Ori.reshape(0, m_analyRoi.height);
+			cv::resize(matWithMag_Ori, matWithMag, cv::Size(m_analyRoi.width / dataDimension, m_analyRoi.height / dataDimension), 0, 0, cv::INTER_AREA);
+			freAxisDataVec.push_back((vector<double>)(matWithMag.reshape(0, 1)));
+			freVec.push_back(iter.key());
+			iter++;
+
+			tmpSize++;
+			showProgress(tmpSize, picDataWithMag_roi.size() / 0.9);
+		}
+	}
+
+	double opts[LM_OPTS_SZ], info[LM_INFO_SZ];
+	opts[0] = LM_INIT_MU; opts[1] = 1E-15;
+	opts[2] = 1E-15; opts[3] = 1E-20;
+	opts[4] = LM_DIFF_DELTA;
+	int n = freVec.size();
+	int m = 25;
+
+
+	resultFreWithMag.resize(freAxisDataVec[0].size());
+
+#pragma omp parallel for num_threads(threadNum)
+	for (int i = 0; i < freAxisDataVec[0].size(); i++)
+	{
+
+
+		vector<double> freWithMag = paraWithMag;
+		vector<double> lastFre = paraWithMag;
+
+		vector<double> zData(freAxisDataVec.size(), 0.0);
+		vector<double> m_Vec(8, 0.0);
+		for (int j = 0; j < freAxisDataVec.size(); j++)
+		{
+
+			zData[j] = freAxisDataVec[j][i];
+		}
+		lastFre = freWithMag;
+
+		int ret = dlevmar_dif(gaussianPara, &freWithMag[0], &zData[0], m, n, 800, NULL, info,
+			NULL, NULL, (void*)&freVec[0]);
+
+		if (ret != -1 && ret != 800)
+		{
+
+			for (int j = 0; j < 8; j++)
+			{
+
+				m_Vec[j] = freWithMag[1 + 3 * j];
+			}
+		}
+		else
+		{
+			vector<int> indexVec;
+			bool isEightPeak = findAllSinglePeak_auto(freVec, zData, indexVec);
+			if (!isEightPeak)
+			{
+				qDebug() << i << "_" << ret << "SecondFit Failed:no 8 Peaks";
+				////保存文件
+				//QString saveFileName = "WithMag_no8peaks" + QString::number(i) + ".dat";
+				//QFile saveFile(saveFileName);
+				//if (!saveFile.open(QIODevice::WriteOnly)) {
+				//	// 文件打开失败
+				//}
+				//QTextStream out(&saveFile);
+				//for (int i = 0; i < freVec.size(); i++) {
+				//	out << freVec[i] << "," << zData[i] << endl;
+				//}
+				//saveFile.close();
+				for (int j = 0; j < 8; j++)
+				{
+					//m_Vec[j] = lastFre[1 + 3 * j];
+					//找不到8个峰就使用第一次拟合结果
+					m_Vec[j] = freWithMag[1 + 3 * j];
+				}
+			}
+			else
+			{
+				for (int j = 0; j < 8; j++)
+				{
+
+					freWithMag[3 * j] = zData.at(indexVec[j]) - paraWithMag[24];
+					freWithMag[3 * j + 1] = freVec.at(indexVec[j]);
+					freWithMag[3 * j + 2] = paraWithMag[3 * j + 2];
+
+				}
+				freWithMag[24] = paraWithMag[24];
+				//test
+				lastFre = freWithMag;
+				ret = dlevmar_dif(gaussianPara, &freWithMag[0], &zData[0], m, n, 1500, NULL, info,
+					NULL, NULL, (void*)&freVec[0]);
+
+				if (ret != -1 && ret != 1500)
+				{
+					for (int j = 0; j < 8; j++)
+					{
+
+						m_Vec[j] = freWithMag[1 + 3 * j];
+					}
+
+				}
+				else
+				{
+					//TODO:保存文件
+					/*QString saveFileName = "WithMag_FAIL_" + QString::number(i) + ".dat";
+					QFile saveFile(saveFileName);
+					if (!saveFile.open(QIODevice::WriteOnly)) {
+						 文件打开失败
+					}
+					QTextStream out(&saveFile);
+					for (int i = 0; i < freVec.size(); i++) {
+						out << freVec[i] << "," << zData[i] << endl;
+					}
+					saveFile.close();*/
+
+					for (int j = 0; j < 8; j++)
+					{
+						qDebug() << freWithMag[3 * j] + 1 << "," << freWithMag[3 * j + 1] << "," << freWithMag[3 * j + 2] << endl;
+
+					}
+
+
+					for (int j = 0; j < 8; j++)
+					{
+						//使用1500次拟合结果
+						m_Vec[j] = freWithMag[1 + 3 * j];
+						//使用第二次自动拟合结果
+						//m_Vec[j] = lastFre[1 + 3 * j];
+					}
+
+					qDebug() << i << "_" << ret << " SecondFit Failed";
+				}
+			}
+		}
+
+		resultFreWithMag[i] = m_Vec;
+	}
+	showProgress(1, 1);
+	setDisabled(false);
+	ui.progressBar->hide();
+	addLogEntry("计算待测磁场完成!", ui.textEdit_Log);
+}
+
+void QDM_Interface::startAllAnalysis()
+{
+	magValueVec.clear();
+	magValueVec_x.clear();
+	magValueVec_y.clear();
+	magValueVec_z.clear();
+	if (0 == resultFreWithMag.size())
+	{
+		return;
+	}
+	if (0 == resultFreNoMag.size())
+	{
+		return;
+	}
+
+
+
+	for (int i = 0; i < resultFreWithMag.size(); i++)
+	{
+		double B1, B2, B3, B4, Bx, By, Bz, Bn;
+		B1 = B2 = B3 = B4 = Bx = By = Bz = 0.0;
+		B1 = ((resultFreWithMag[i][7] - resultFreWithMag[i][0]) - (resultFreNoMag[i][7] - resultFreNoMag[i][0])) / 5.6;
+		B2 = ((resultFreWithMag[i][6] - resultFreWithMag[i][1]) - (resultFreNoMag[i][6] - resultFreNoMag[i][1])) / 5.6;
+		B3 = ((resultFreWithMag[i][5] - resultFreWithMag[i][2]) - (resultFreNoMag[i][5] - resultFreNoMag[i][2])) / 5.6;
+		B4 = ((resultFreWithMag[i][4] - resultFreWithMag[i][3]) - (resultFreNoMag[i][4] - resultFreNoMag[i][3])) / 5.6;
+
+
+
+		Bx = sqrt(3) / 4 * (B1 - B2 - B3 + B4);
+		By = sqrt(3) / 4 * (B1 + B2 - B3 - B4);
+		Bz = sqrt(3) / 4 * (B1 - B2 + B3 - B4);
+
+
+		Bn = sqrt(pow(Bx, 2) + pow(By, 2) + pow(Bz, 2));
+		magValueVec.push_back(Bn);
+		magValueVec_x.push_back(Bx);
+		magValueVec_y.push_back(By);
+		magValueVec_z.push_back(Bz);
+	}
+	magValueVec_raw = magValueVec;
+	magValueVec_x_raw = magValueVec_x;
+	magValueVec_y_raw = magValueVec_y;
+	magValueVec_z_raw = magValueVec_z;
+	//增加对比度矢量的归一化处理
+	std::vector<double>::iterator max_it, min_it;
+	double dis, dis_X, dis_Y, dis_Z;
+	double minValue, minValue_X, minValue_Y, minValue_Z;
+
+	max_it = std::max_element(magValueVec.begin(), magValueVec.end());
+	min_it = std::min_element(magValueVec.begin(), magValueVec.end());
+	minValue = *min_it;
+	dis = (*max_it) - (*min_it);
+
+	max_it = std::max_element(magValueVec_x.begin(), magValueVec_x.end());
+	min_it = std::min_element(magValueVec_x.begin(), magValueVec_x.end());
+	minValue_X = *min_it;
+	dis_X = (*max_it) - (*min_it);
+
+	max_it = std::max_element(magValueVec_y.begin(), magValueVec_y.end());
+	min_it = std::min_element(magValueVec_y.begin(), magValueVec_y.end());
+	minValue_Y = *min_it;
+	dis_Y = (*max_it) - (*min_it);
+
+	max_it = std::max_element(magValueVec_z.begin(), magValueVec_z.end());
+	min_it = std::min_element(magValueVec_z.begin(), magValueVec_z.end());
+	minValue_Z = *min_it;
+	dis_Z = (*max_it) - (*min_it);
+
+
+	for (int i = 0; i < magValueVec.size(); i++)
+	{
+		magValueVec[i] = (magValueVec[i] - minValue) / dis;
+		magValueVec_x[i] = (magValueVec_x[i] - minValue_X) / dis_X;
+		magValueVec_y[i] = (magValueVec_y[i] - minValue_Y) / dis_Y;
+		magValueVec_z[i] = (magValueVec_z[i] - minValue_Z) / dis_Z;
+	}
+	/*QPixmap pix = grab(QRect(ui.label_ColorCard->x(), ui.label_ColorCard->y(), ui.label_ColorCard->width(), ui.label_ColorCard->height()));
+	QImage image0 = pix.toImage();
+
+
+	QImage imgScaled = image0.scaled(ui.graphicsView->width(), ui.graphicsView->height(), Qt::KeepAspectRatio);
+	if (m_image_item)
+	{
+		m_scene->removeItem(m_image_item);
+		delete m_image_item;
+		m_image_item = 0;
+	}
+	m_image_item = m_scene->addPixmap(QPixmap::fromImage(imgScaled));*/
+
+
+	addLogEntry("计算综合磁场完成!", ui.textEdit_Log);
+
+}
+void QDM_Interface::calMagDirection()
+{
+	double B1, B2, B3, B4, Bx, By, Bz, Bn;
+	B1 = B2 = B3 = B4 = Bx = By = Bz = 0.0;
+	B1 = ((resultFreWithMag[0][7] - resultFreWithMag[0][0]) - (resultFreNoMag[0][7] - resultFreNoMag[0][0])) / 5.6;
+	B2 = ((resultFreWithMag[0][6] - resultFreWithMag[0][1]) - (resultFreNoMag[0][6] - resultFreNoMag[0][1])) / 5.6;
+	B3 = ((resultFreWithMag[0][5] - resultFreWithMag[0][2]) - (resultFreNoMag[0][5] - resultFreNoMag[0][2])) / 5.6;
+	B4 = ((resultFreWithMag[0][4] - resultFreWithMag[0][3]) - (resultFreNoMag[0][4] - resultFreNoMag[0][3])) / 5.6;
+	Bx = sqrt(3) / 4 * (B1 - B2 - B3 + B4);
+	By = sqrt(3) / 4 * (B1 + B2 - B3 - B4);
+	Bz = sqrt(3) / 4 * (B1 - B2 + B3 - B4);
+	Bn = sqrt(pow(Bx, 2) + pow(By, 2) + pow(Bz, 2));
+}
+void QDM_Interface::openColorMapPage()
+{
+	colorMapPage = new ColorMapWidget(magValueVec, magValueVec_x, magValueVec_y, magValueVec_z, dataDimension);
+	colorMapPage->show();
+	colorMapPage->setRawMagValue(magValueVec_raw, magValueVec_x_raw, magValueVec_y_raw, magValueVec_z_raw);
+	colorMapPage->setHW(roiHeight, roiWidth);
+	addLogEntry("打开伪彩图界面!", ui.textEdit_Log);
+
+}
+void QDM_Interface::contrastAnalysis()
+{
+	magValueVec.clear();
+	magValueVec_x.clear();
+	magValueVec_y.clear();
+	magValueVec_z.clear();
+	if (0 == resultFreWithMag.size())
+	{
+		return;
+	}
+	for (int i = 0; i < resultFreWithMag.size(); i++)
+	{
+		double B1, B2, B3, B4, Bx, By, Bz, Bn;
+		B1 = B2 = B3 = B4 = Bx = By = Bz = 0.0;
+		B1 = (resultFreWithMag[i][7] - resultFreWithMag[i][0]) / 5.6;
+		B2 = (resultFreWithMag[i][6] - resultFreWithMag[i][1]) / 5.6;
+		B3 = (resultFreWithMag[i][5] - resultFreWithMag[i][2]) / 5.6;
+		B4 = (resultFreWithMag[i][4] - resultFreWithMag[i][3]) / 5.6;
+
+
+		Bx = sqrt(3) / 4 * (B1 - B2 - B3 + B4);
+		By = sqrt(3) / 4 * (B1 + B2 - B3 - B4);
+		Bz = sqrt(3) / 4 * (B1 - B2 + B3 - B4);
+
+		/* Bx = sqrt(3) * (B1 + B3);
+		 By = sqrt(3) * (-B2 - B3);
+		 Bz = sqrt(3) * (B1 + B2);*/
+		Bn = sqrt(pow(Bx, 2) + pow(By, 2) + pow(Bz, 2));
+		magValueVec.push_back(Bn);
+		magValueVec_x.push_back(Bx);
+		magValueVec_y.push_back(By);
+		magValueVec_z.push_back(Bz);
+	}
+	magValueVec_raw = magValueVec;
+	magValueVec_x_raw = magValueVec_x;
+	magValueVec_y_raw = magValueVec_y;
+	magValueVec_z_raw = magValueVec_z;
+	//增加对比度矢量的归一化处理
+	std::vector<double>::iterator max_it, min_it;
+	double dis, dis_X, dis_Y, dis_Z;
+	double minValue, minValue_X, minValue_Y, minValue_Z;
+
+	max_it = std::max_element(magValueVec.begin(), magValueVec.end());
+	min_it = std::min_element(magValueVec.begin(), magValueVec.end());
+	minValue = *min_it;
+	dis = (*max_it) - (*min_it);
+
+	max_it = std::max_element(magValueVec_x.begin(), magValueVec_x.end());
+	min_it = std::min_element(magValueVec_x.begin(), magValueVec_x.end());
+	minValue_X = *min_it;
+	dis_X = (*max_it) - (*min_it);
+
+	max_it = std::max_element(magValueVec_y.begin(), magValueVec_y.end());
+	min_it = std::min_element(magValueVec_y.begin(), magValueVec_y.end());
+	minValue_Y = *min_it;
+	dis_Y = (*max_it) - (*min_it);
+
+	max_it = std::max_element(magValueVec_z.begin(), magValueVec_z.end());
+	min_it = std::min_element(magValueVec_z.begin(), magValueVec_z.end());
+	minValue_Z = *min_it;
+	dis_Z = (*max_it) - (*min_it);
+
+
+	for (int i = 0; i < magValueVec.size(); i++)
+	{
+		magValueVec[i] = (magValueVec[i] - minValue) / dis;
+		magValueVec_x[i] = (magValueVec_x[i] - minValue_X) / dis_X;
+		magValueVec_y[i] = (magValueVec_y[i] - minValue_Y) / dis_Y;
+		magValueVec_z[i] = (magValueVec_z[i] - minValue_Z) / dis_Z;
+	}
+
+
+	addLogEntry("计算自身磁场完成!", ui.textEdit_Log);
+
+}
+
+
+
+void QDM_Interface::setAnalysisMode()
+{
+	if (ui.radioButton_AnalysisAll->isChecked())
+	{
+
+		connect(ui.pushButton_StartAllAnalysis, &QPushButton::clicked, this, &QDM_Interface::startAllAnalysis);//综合分析
+		disconnect(ui.pushButton_StartAllAnalysis, &QPushButton::clicked, this, &QDM_Interface::contrastAnalysis);
+
+		ui.pushButton_ImportPicNoMag->setEnabled(true);
+		ui.pushButton_ImportParaNoMag->setEnabled(true);
+		ui.pushButton_AverODMRNoMag->setEnabled(true);
+		ui.pushButton_GetInitParaNoMag->setEnabled(true);
+		ui.pushButton_StartAnalysisNoMag->setEnabled(true);
+		ui.pushButton_loadNoMagData->setEnabled(true);
+	}
+	else
+	{
+		connect(ui.pushButton_StartAllAnalysis, &QPushButton::clicked, this, &QDM_Interface::contrastAnalysis);//自身分析
+		disconnect(ui.pushButton_StartAllAnalysis, &QPushButton::clicked, this, &QDM_Interface::startAllAnalysis);
+
+		ui.pushButton_ImportPicNoMag->setEnabled(false);
+		ui.pushButton_ImportParaNoMag->setEnabled(false);
+		ui.pushButton_AverODMRNoMag->setEnabled(false);
+		ui.pushButton_GetInitParaNoMag->setEnabled(false);
+		ui.pushButton_StartAnalysisNoMag->setEnabled(false);
+		ui.pushButton_loadNoMagData->setEnabled(false);
+
+	}
+}
+
+void QDM_Interface::setAnalysisRoi()
+{
+
+	AnalysisRoi* analysisRoi = AnalysisRoi::getInstance();
+	analysisRoi->show();
+	connect(analysisRoi, &AnalysisRoi::getAnalysisRoi, this, &QDM_Interface::SetAnalysisRoiParam); 
+		connect(analysisRoi, &AnalysisRoi::cancelAnalysisRoi, this, &QDM_Interface::CancelAnalysisRoiParam);
+	addLogEntry("打开矢量ROI设置界面!", ui.textEdit_Log);
+}
+
+void QDM_Interface::SetAnalysisRoiParam(int x, int y, int w, int h)
+{
+
+	is_analyRoi = true;
+	cv::Rect roi(x, y, w, h);
+	m_analyRoi = roi;
+
+	/*g_Width = w;
+	g_Height = h;*/
+	/*roiHeight = h;
+	roiWidth = w;*/
+
+	if (is_openWithMagImg)
+	{
+		if (imageWithMag.empty())
+		{
+			offGrayValue = 0;
+		}
+		else {
+			//如果打开待测磁场
+			cv::Mat tmp = imageWithMag(roi);
+			cv::Scalar mean = cv::mean(tmp);
+			offGrayValue = mean[0];
+			
+		}
+		ui.lineEdit_OffWaveValue->setText(QString::number(offGrayValue));
+	}
+	else
+	{
+		if (imageNoMag.empty())
+		{
+			offGrayValue = 0;
+		}
+		else {
+			//如果打开基准磁场
+			cv::Mat tmp = imageNoMag(roi);
+			cv::Scalar mean = cv::mean(tmp);
+			offGrayValue = mean[0];
+			
+		}
+		ui.lineEdit_OffWaveValue->setText(QString::number(offGrayValue));
+	}
+	
+	
+
+	float scalex = static_cast<float>(g_uiPicWidth) / picCols;
+	float scaley = static_cast<float>(g_uiPicHeigth) / picRows;
+	// 清空graphicsView的场景
+
+
+	// 创建一个矩形框
+	QRectF rect(x*scalex, y*scaley, w*scalex, h*scaley);
+
+	// 清空场景中的所有项
+	m_scene->clear();
+
+	// 添加图片和矩形框到场景中
+	m_image_item = m_scene->addPixmap(QPixmap::fromImage(grayImg));
+	m_scene->addRect(rect, QPen(Qt::green), QBrush(Qt::NoBrush))->setZValue(std::numeric_limits<qreal>::max());
+
+}
+
+void QDM_Interface::CancelAnalysisRoiParam()
+{
+	if (is_openWithMagImg)
+	{
+		//如果打开待测磁场
+		offGrayValue = offGrayValueWithMag;
+		ui.lineEdit_OffWaveValue->setText(QString::number(offGrayValue));
+	}
+	else
+	{
+		//如果打开待测磁场
+		offGrayValue = offGrayValueNoMag;
+		ui.lineEdit_OffWaveValue->setText(QString::number(offGrayValue));
+	}
+	
+	// 清空场景中的所有项
+	m_scene->clear();
+
+	// 添加图片和矩形框到场景中
+	m_image_item = m_scene->addPixmap(QPixmap::fromImage(grayImg));
+
+	is_analyRoi = false;
+	/*g_Width = picCols;
+	g_Height = picRows;*/
+	//roiHeight = g_Height;
+	//roiWidth = g_Width;
+}
+
+void QDM_Interface::calParams()
+{
+	//offGrayValue,在线与离线时获取不同得值
+	double grayValue = ui.lineEdit_OffWaveValue->text().toDouble();
+	
+
+	double f0 = ui.lineEdit_F0->text().toDouble() ;
+	double f1 = ui.lineEdit_F1->text().toDouble() ;
+	double xstart = ui.lineEdit_KStart->text().toDouble() ;
+	double xend = ui.lineEdit_KEnd->text().toDouble() ;
+
+	//计算标准差
+	QVector<double>A;
+	double A_avg = 0.0;
+	int Asize = 0;
+	double Astd = 0.0;
+
+
+	int f0index = ui.widget->graph(0)->findBegin(f0, true);
+	int f1index = ui.widget->graph(0)->findBegin(f1, true);
+
+
+	for (int j = f0index; j < f1index; j++)
+	{
+		double y0 = ui.widget->graph(0)->data()->at(j)->value;
+		A.push_back(y0);
+		Asize++;
+		A_avg += y0;
+	}
+	A_avg /= Asize;
+
+	for (int k = 0; k < Asize; k++)
+	{
+		double tmp = (A[k] - A_avg)*(A[k] - A_avg);
+		Astd += tmp;
+	}
+	Astd /= Asize;
+	Astd = qSqrt(Astd);
+	//0227TODO
+	Astd *= grayValue;
+	ui.lineEdit_Std->setText(QString::number(Astd));
+
+	// 计算斜率
+	double K = 0.0;
+	QString abc = ui.widget->graph(0)->name();
+	int xstartindex = ui.widget->graph(0)->findBegin(xstart, true);
+	int xendindex = ui.widget->graph(0)->findBegin(xend, true);
+	if (xstartindex != -1 && xendindex != -1 && xstart < xend) { // 确保xstart和xend是有效的坐标且xstart小于xend
+		/*double ystart = ui.widget->graph(0)->data()->at(xstartindex)->value;
+		double yend = ui.widget->graph(0)->data()->at(xendindex)->value;*/
+		double ystart = ui.lineEdit_StartY->text().toDouble();
+		double yend = ui.lineEdit_EndY->text().toDouble();
+		K = (yend - ystart) / (xend  - xstart)*grayValue;
+	}
+	
+	ui.lineEdit_K->setText(QString::number(K));
+}
+
+void QDM_Interface::calSensitivity()
+{
+	double sen = 0.0;
+	double Astd = ui.lineEdit_Std->text().toDouble();
+	double K = ui.lineEdit_K->text().toDouble();
+	double Exp = ui.lineEdit_Exp->text().toDouble();
+
+	sen = (Astd / (2.8*K))*qSqrt(Exp);
+	sen = abs(sen)*100;
+	ui.lineEdit_Sensitivity->setText(QString::number(sen));
+}
+
+
+void QDM_Interface::openRoiAnalysePage()
+{
+	QString program = "maCameraWidgets.exe";     // 可执行文件路径
+
+	QProcess *myProcess = new QProcess(this);
+	myProcess->start(program);
+	addLogEntry("打开离线ROI分析界面!", ui.textEdit_Log);
+}
+
+
+
+
+
+void QDM_Interface::mousePressEvent(QMouseEvent * event)
+{
+	if (event->button() == Qt::LeftButton) {
+		// 记录鼠标按下时的位置
+		m_dragPosition = event->globalPos() - frameGeometry().topLeft();
+		event->accept();
+	}
+}
+
+void QDM_Interface::mouseMoveEvent(QMouseEvent * event)
+{
+	if (event->buttons() & Qt::LeftButton) {
+		// 移动窗口到当前鼠标位置
+		move(event->globalPos() - m_dragPosition);
+		event->accept();
+	}
+}
+
+void QDM_Interface::startAllOut()
+{
+	/*if (ui.pushButton_ConnectCurrent->text() == ("连接LED"))
+	{
+		connectCurrent();
+		Sleep(10);
+	}*/
+	if (ui.pushButton_ConnectWave->text() == ("连接微波"))
+	{
+		connectWave();
+		Sleep(10);
+	}
+
+	//if (ui.pushButton_ConnectCoilXYZ->text() == ("连接线圈"))
+	//{
+	//	connectCoilXYZ();
+	//	Sleep(10);
+	//}
+	//if (ui.pushButton_ConnectMotor->text() == ("连接电机"))
+	//{
+	//	connectMotor();
+	//	Sleep(10);
+	//}
+	if (ui.pushButton_ConnectPulse->text() == ("连接脉冲卡"))
+	{
+		connectPulse();
+		Sleep(10);
+	}
+
+	if (ui.pushButton_ConnectCamera->text() == ("连接相机"))
+	{
+		connectCamera();
+		Sleep(10);
+	}
+
+}
+
+void QDM_Interface::addLogEntry(const QString & logMessage, QTextEdit * textEdit)
+{
+	// 获取当前时间
+	QDateTime currentDateTime = QDateTime::currentDateTime();
+	QString currentDateTimeString = currentDateTime.toString("yyyy-MM-dd hh:mm:ss");
+
+	// 构建日志条目，包括时间、操作内容和换行
+	QString logEntry = currentDateTimeString + " - " + logMessage;
+	// 将日志条目追加到QTextEdit中
+	textEdit->append(logEntry);
+}
+
+void QDM_Interface::clearLog(QTextEdit * textEdit)
+{
+	textEdit->clear();
+}
+
+void QDM_Interface::ClearLog()
+{
+	clearLog(ui.textEdit_Log);
+}
+
+void QDM_Interface::showGrayvalue(int x, int y)
+{
+	float scaleX = static_cast<float>(g_uiPicWidth) / g_Width;
+	float scaleY = static_cast<float>(g_uiPicHeigth)  / g_Height;
+
+	imgX = x / scaleX;
+	imgY = y / scaleY;
+
+	if (imgX>= grayMat.cols || imgY>= grayMat.rows)
+	{
+		return;
+	}
+
+	QString text =  "("+ QString::number(imgX) + ", " + QString::number(imgY)+")";
+	ui.label_Point->setText(text);
+
+	int type = grayMat.type();
+	int grayValue = 0;
+
+	if (grayMat.empty())
+	{
+		ui.label_GrayValue->setText("0");
+	}
+	else
+	{
+		if (type == CV_8U) {
+			grayValue = grayMat.at<uchar>(imgY, imgX);
+		}
+		else if (type == CV_16U)
+		{
+			grayValue = grayMat.at<ushort>(imgY, imgX);
+		}
+		QString text1 = QString::number(grayValue);
+		ui.label_GrayValue->setText(text1);
+	}
+
+}
+
+void QDM_Interface::updateGrayValue()
+{
+	if (imgX >= grayMat.cols || imgY >= grayMat.rows)
+	{
+		return;
+	}
+	int type = grayMat.type();
+	int grayValue = 0;
+	if (grayMat.empty())
+	{
+		ui.label_GrayValue->setText("0");
+	}
+	else
+	{
+		if (type == CV_8U) {
+			grayValue = grayMat.at<uchar>(imgY, imgX);
+		}
+		else if (type == CV_16U)
+		{
+			grayValue = grayMat.at<ushort>(imgY, imgX);
+		}
+		QString text1 = QString::number(grayValue);
+		ui.label_GrayValue->setText(text1);
+	}
+}
+
+int QDM_Interface::LinearSmooth3(vector<double>& input, long size)
+{
+	vector<double> output = input;
+	long i(0);
+
+	if (size < 3)
+	{
+		for (i = 0; i <= size - 1; i++)
+		{
+			output[i] = input[i];
+		}
+	}
+	else
+	{
+		output[0] = (5.0 * input[0] + 2.0 * input[1] - input[2]) / 6.0;
+		for (i = 1; i <= size - 2; i++)
+		{
+			output[i] = (input[i - 1] + input[i] + input[i + 1]) / 3.0;
+		}
+		output[size - 1] = (5.0 * input[size - 1] + 2.0 * input[size - 2] - input[size - 3]) / 6.0;
+	}
+
+	input = output;
+
+	return 0;
+}
+
+int QDM_Interface::LinearSmooth5(vector<double>& input, long size)
+{
+	vector<double> output = input;
+	long i(0);
+
+	if (size < 5)
+	{
+		for (i = 0; i <= size - 1; i++)
+		{
+			output[i] = input[i];
+		}
+	}
+	else
+	{
+		output[0] = (3.0 * input[0] + 2.0 * input[1] + input[2] - input[4]) / 5.0;
+		output[1] = (4.0 * input[0] + 3.0 * input[1] + 2 * input[2] + input[3]) / 10.0;
+		for (i = 2; i <= size - 3; i++)
+		{
+			output[i] = (input[i - 2] + input[i - 1] + input[i] + input[i + 1] + input[i + 2]) / 5.0;
+		}
+		output[size - 2] = (4.0 * input[size - 1] + 3.0 * input[size - 2] + 2 * input[size - 3] + input[size - 4]) / 10.0;
+		output[size - 1] = (3.0 * input[size - 1] + 2.0 * input[size - 2] + input[size - 3] - input[size - 5]) / 5.0;
+	}
+
+	input = output;
+
+	return 0;
+}
+
+int QDM_Interface::LinearSmooth7(vector<double>& input, long size)
+{
+	vector<double> output = input;
+	long i(0);
+
+	if (size < 7)
+	{
+		for (i = 0; i <= size - 1; i++)
+		{
+			output[i] = input[i];
+		}
+	}
+	else
+	{
+		output[0] = (13.0 * input[0] + 10.0 * input[1] + 7.0 * input[2] + 4.0 * input[3] +
+			input[4] - 2.0 * input[5] - 5.0 * input[6]) / 28.0;
+		output[1] = (5.0 * input[0] + 4.0 * input[1] + 3 * input[2] + 2 * input[3] +
+			input[4] - input[6]) / 14.0;
+		output[2] = (7.0 * input[0] + 6.0 * input[1] + 5.0 * input[2] + 4.0 * input[3] +
+			3.0 * input[4] + 2.0 * input[5] + input[6]) / 28.0;
+		for (i = 3; i <= size - 4; i++)
+		{
+			output[i] = (input[i - 3] + input[i - 2] + input[i - 1] + input[i] + input[i + 1] + input[i + 2] + input[i + 3]) / 7.0;
+		}
+		output[size - 3] = (7.0 * input[size - 1] + 6.0 * input[size - 2] + 5.0 * input[size - 3] +
+			4.0 * input[size - 4] + 3.0 * input[size - 5] + 2.0 * input[size - 6] + input[size - 7]) / 28.0;
+		output[size - 2] = (5.0 * input[size - 1] + 4.0 * input[size - 2] + 3.0 * input[size - 3] +
+			2.0 * input[size - 4] + input[size - 5] - input[size - 7]) / 14.0;
+		output[size - 1] = (13.0 * input[size - 1] + 10.0 * input[size - 2] + 7.0 * input[size - 3] +
+			4 * input[size - 4] + input[size - 5] - 2 * input[size - 6] - 5 * input[size - 7]) / 28.0;
+	}
+	input = output;
+
+	return 0;
+}
+
+
+
+
+
+bool QDM_Interface::eventFilter(QObject* obj, QEvent* event)
+{
+	if (obj == ui.comboBox_Current) // 检查是否是你想要处理的控件
+	{
+		//qDebug() << event;
+		if (event->type() == QEvent::MouseButtonPress) // 检查事件类型
+		{
+			// 处理鼠标按下事件
+			initCurrentCom();
+
+		}
+	}
+	else if (obj == ui.label_ColorCard && event->type() == QEvent::Paint)
+	{
+		///EventFilter中的QPainter设备是需要监视的对象，不能是this父窗口
+
+		QPainter painter(ui.label_ColorCard);
+		painter.setRenderHint(QPainter::Antialiasing);//反锯齿
+		int x = 0;
+		int y = 0;
+		int w = ui.label_ColorCard->rect().width();
+		int h = ui.label_ColorCard->rect().height();
+		QLinearGradient linearGradient(x, y, x, y + h);//渐变区域
+		linearGradient.setColorAt(0, Qt::red);
+		linearGradient.setColorAt(0.33, Qt::yellow);
+		linearGradient.setColorAt(0.66, Qt::green);
+		linearGradient.setColorAt(1, Qt::blue);
+		painter.setBrush(linearGradient);//设置画刷，则painter.drawRect(rect());绘制出渐变背景
+		painter.drawRect(QRect(x, y, w, h));
+
+
+	}
+
+
+	return QWidget::eventFilter(obj, event);
+}
+
+

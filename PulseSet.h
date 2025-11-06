@@ -1,0 +1,73 @@
+#pragma once
+#include"qcustomplot.h"
+#include <QDialog>
+#include "ui_PulseSet.h"
+#include <vector>
+
+#include <QJsonObject>
+#include <QJsonDocument>
+#include <QFile>
+#include <QFileDialog>
+#if _MSC_VER >= 1600
+#pragma execution_character_set("utf-8")
+#endif
+class PulseSet : public QDialog
+{
+	Q_OBJECT
+
+public:
+	PulseSet(QWidget *parent = nullptr);
+	~PulseSet();
+	
+private:
+	Ui::PulseSetClass ui;
+	//总周期
+	int cycleTime = 0;
+	//脉冲次数
+	int pulseNumbers = 0;
+	//高电平-微波切频
+	int highLevel0 = 4;//改到float 3.3
+	//高电平-相机硬触发
+	int highLevel1 = 5;
+	//高电平-微波开关
+	int highLevel2 = 5;//5->>3.3
+	//脉冲起点
+	int	startTime0_0 = 0;
+	//脉冲持续
+	int ctuTime0_0 = 0;
+	//相机起点0
+	int	startTime1_0 = 0;
+	//相机起点1
+	int	startTime1_1 = 0;
+	//相机持续0
+	int	ctuTime1_0 = 0;
+	//相机持续1
+	int	ctuTime1_1 = 0;
+	//微波开关起点
+	int	startTime2_0 = 0;
+	//微波开关持续
+	int	ctuTime2_0 = 0;
+
+private:
+	void showPulse();
+	void init_customplot();
+	void readPulseParam();
+	void savePusleParam();
+	void lodaPulseParam(QString str);
+	void lineeditSetRange();
+	void readInitPulseParam();
+	void saveInitPulseParam();
+	QCPAxis* yAxis0;
+	QCPGraph* graph0;
+	QCPGraph* graph1; 
+	QCPGraph* graph2;
+
+signals:
+	void GetPulseParam(int cycleTime, int pulseNumbers,QVector<float>A0, QVector<float>A1, QVector<float>A2);
+	void GetPulseTimesParam(int	startTime0_0, int ctuTime0_0, int	startTime1_0, int	ctuTime1_0, int	startTime1_1, int	ctuTime1_1,
+		int	startTime2_0, int	ctuTime2_0);
+public slots:
+	void on_MouseMoveCustomplot(QMouseEvent*);
+
+
+};

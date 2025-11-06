@@ -1,0 +1,131 @@
+#pragma once
+#include <tchar.h>
+#include ".\MT\MT_API.h"
+#include <QDebug>
+#include <QJsonObject>
+#include <QJsonDocument>
+#include <QFile>
+#include <QFileDialog>
+#include <QTimer>
+#include <QObject>
+typedef uint8_t byte;
+//细分：水平位移台 4000脉冲=1mm  升降台8000脉冲=1mm 
+enum Mode {
+	Standard,	//0 标准模式-相对移动
+	FineTuning	//1 微调模式-绝对调速
+};
+
+class MotorController : public QObject
+{
+	//必须加入Q_OBJECT才可以使用信号和槽
+	Q_OBJECT
+public:
+	MotorController();
+	~MotorController();
+
+	// USB连接电机
+	bool connectMotor();
+
+	// 断开电机连接
+	void disconnectMotor();
+
+	//指定速度找零
+	void findZero();
+
+	//三轴电机运动状态  true-运动，false-停止
+	bool stateOfMotion();
+
+	// 前进
+	void forward(Mode currentMode,int iRef= 10000);
+
+	// 后退
+	void backward(Mode currentMode,int iRef = -10000);
+
+	// 左移
+	void left(Mode currentMode, int iRef = -10000);
+
+	// 右移
+	void right(Mode currentMode, int iRef = 10000);
+
+	// 上升
+	void up(Mode currentMode, int iRef = 10000);
+
+	// 下降
+	void down(Mode currentMode, int iRef = -10000);
+
+	// 上料
+	void load();
+
+	// 下料
+	void unload();
+
+	//记录位置
+	void writeP0();
+
+	//记录位置
+	void writeP1();
+
+	//复位
+	void readP0();
+
+	//复位
+	void readP1();
+
+	//急停
+	void stop();
+
+	//调速模式停止
+	void onStopV();
+
+	//移位模式停止
+	void onStop();
+
+	//获得电机位置信息
+	void getPos();
+
+	//绝对位置移动到X位置
+	void goXPos(int m_Abs);
+
+	//绝对位置移动到Y位置
+	void goYPos(int m_Abs);
+
+	//绝对位置移动到Z位置
+	void goZPos(int m_Abs);
+
+private:
+	//3轴通用
+	int m_Acc=2000;	//加速度
+	int m_Dec=2000;	//减速度
+	int m_Maxv=4000;//最大速度
+
+	
+
+	int m_V_Abs=400;//绝对调速
+	
+
+	int m_Home_V=4000;//找零,-无穷
+
+	const int X = 0;
+	const int Y = 1;
+	const int Z = 2;
+	//不通用
+	int m_P_Now_X;//当前位置-X
+	int m_P_Now_Y;//当前位置-Y
+	int m_P_Now_Z;//当前位置-Z
+
+	int m_V_Now_X;//当前速度-X
+	int m_V_Now_Y;//当前速度-Y
+	int m_V_Now_Z;//当前速度-Z
+
+	QTimer* timer;//定时器查看电机状态
+	QTimer* timer_pos;//定时器查看电机状态
+
+	bool findNegPos = false;	//找到负限位
+signals:
+	void stateOfMotionOk();
+	void getMotorPos(int pos_x, int pos_y, int pos_z);
+	void isRunX(bool isRun);
+	void isRunY(bool isRun);
+	void isRunZ(bool isRun);
+};
+

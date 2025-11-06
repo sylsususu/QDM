@@ -1,0 +1,1613 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PulseGeneratorClass</class>
+ <widget class="QWidget" name="PulseGeneratorClass">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1924</width>
+    <height>1040</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>1532</width>
+    <height>936</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>PulseGenerator</string>
+  </property>
+  <property name="windowIcon">
+   <iconset>
+    <normaloff>:/PulseGenerator/Image/PulseLogo.PNG</normaloff>:/PulseGenerator/Image/PulseLogo.PNG</iconset>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">QWidget#PulseGeneratorClass
+{
+background-color:#F2F2F2 ;
+}</string>
+  </property>
+  <widget class="QFrame" name="frame">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>223</width>
+     <height>1040</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">QFrame#frame
+{
+border-image: url(:/PulseImage/左侧功能.png);
+}
+</string>
+   </property>
+   <property name="frameShape">
+    <enum>QFrame::StyledPanel</enum>
+   </property>
+   <property name="frameShadow">
+    <enum>QFrame::Raised</enum>
+   </property>
+   <widget class="QLabel" name="label">
+    <property name="geometry">
+     <rect>
+      <x>58</x>
+      <y>117</y>
+      <width>101</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QLabel#label
+{
+border-image: url(:/PulseGenerator/Image/连接设备.png);
+}</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_Connect">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>65</x>
+      <y>164</y>
+      <width>80</width>
+      <height>48</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton#pushButton_Connect
+{
+ border-image: url(:/PulseImage/switch.png);
+
+}
+</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_Import">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>250</y>
+      <width>210</width>
+      <height>60</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton#pushButton_Import
+{
+border-image: url(:/PulseImage/加载.png);
+}
+
+QPushButton#pushButton_Import::hover
+{
+border-image: url(:/PulseImage/1206补充切图-保存_序列预览/悬浮点击加载.png);
+}</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_Clear">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>310</y>
+      <width>210</width>
+      <height>60</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton#pushButton_Clear
+{
+border-image: url(:/PulseImage/清除.png);
+}
+
+QPushButton#pushButton_Clear::hover
+
+{
+border-image: url(:/PulseImage/1206补充切图-保存_序列预览/悬浮点击清除.png);
+}</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_Save">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>370</y>
+      <width>210</width>
+      <height>60</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton#pushButton_Save
+
+{
+border-image: url(:/PulseImage/1206补充切图-保存_序列预览/保存.png);
+}
+QPushButton#pushButton_Save::hover
+{
+
+
+border-image: url(:/PulseImage/1206补充切图-保存_序列预览/悬浮点击保存.png);
+
+}</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_CheckPulse">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>430</y>
+      <width>210</width>
+      <height>60</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton#pushButton_CheckPulse
+{
+border-image: url(:/PulseImage/1206补充切图-保存_序列预览/序列预览.png);
+}
+
+QPushButton#pushButton_CheckPulse::hover
+{
+border-image: url(:/PulseImage/1206补充切图-保存_序列预览/悬浮点击序列预览.png);
+}</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_SendData">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>490</y>
+      <width>210</width>
+      <height>60</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton#pushButton_SendData
+{
+border-image: url(:/PulseImage/序列烧录.png);
+}
+QPushButton#pushButton_SendData::hover
+{
+border-image: url(:/PulseImage/1206补充切图-保存_序列预览/悬浮点击序列烧录.png);
+}</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QFrame" name="frame_Top">
+   <property name="geometry">
+    <rect>
+     <x>190</x>
+     <y>0</y>
+     <width>1731</width>
+     <height>76</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">QFrame#frame_Top
+{
+border-image: url(:/PulseImage/矩形.png);
+}</string>
+   </property>
+   <property name="frameShape">
+    <enum>QFrame::StyledPanel</enum>
+   </property>
+   <property name="frameShadow">
+    <enum>QFrame::Raised</enum>
+   </property>
+   <widget class="QPushButton" name="pushButton_Max">
+    <property name="geometry">
+     <rect>
+      <x>1610</x>
+      <y>10</y>
+      <width>40</width>
+      <height>40</height>
+     </rect>
+    </property>
+    <property name="minimumSize">
+     <size>
+      <width>40</width>
+      <height>40</height>
+     </size>
+    </property>
+    <property name="maximumSize">
+     <size>
+      <width>40</width>
+      <height>40</height>
+     </size>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton#pushButton_Max
+{
+border-image: url(:/PulseImage/btn_最大化_nor.PNG);
+}
+
+QPushButton#pushButton_Max::hover
+{
+background-color:#E5E5E5;
+}</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_Mini">
+    <property name="geometry">
+     <rect>
+      <x>1550</x>
+      <y>10</y>
+      <width>40</width>
+      <height>40</height>
+     </rect>
+    </property>
+    <property name="sizePolicy">
+     <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+      <horstretch>0</horstretch>
+      <verstretch>0</verstretch>
+     </sizepolicy>
+    </property>
+    <property name="minimumSize">
+     <size>
+      <width>40</width>
+      <height>40</height>
+     </size>
+    </property>
+    <property name="maximumSize">
+     <size>
+      <width>40</width>
+      <height>40</height>
+     </size>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton#pushButton_Mini
+{
+border-image: url(:/PulseImage/btn_最小化_nor.PNG);
+}
+
+QPushButton#pushButton_Mini::hover
+{
+background-color:#E5E5E5;
+}</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_Close">
+    <property name="geometry">
+     <rect>
+      <x>1670</x>
+      <y>10</y>
+      <width>40</width>
+      <height>40</height>
+     </rect>
+    </property>
+    <property name="minimumSize">
+     <size>
+      <width>40</width>
+      <height>40</height>
+     </size>
+    </property>
+    <property name="maximumSize">
+     <size>
+      <width>40</width>
+      <height>40</height>
+     </size>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton#pushButton_Close
+{
+border-image: url(:/PulseImage/btn_关闭_nor.PNG);
+}
+QPushButton#pushButton_Close::hover
+{
+background-color:#E5E5E5;
+}</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QTableWidget" name="tableWidget_Loop">
+   <property name="geometry">
+    <rect>
+     <x>315</x>
+     <y>100</y>
+     <width>1601</width>
+     <height>81</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">
+QTableWidget::cell:selected,QTableView::cell:selected {				    /*设置选中的视图项*/
+        background: rgb(0，255，0);
+        
+}
+
+QHeaderView::section{
+border:0px;
+border-radius:0px;
+padding:2px 4px;
+background-color:#f2f2f2;
+color:#000000;
+width:40;
+height:32;
+align:Center;
+font-size:20px;
+font-family: PingFangSC-Regular;
+font-weight:500
+}
+
+QTableWidget
+{
+alternate-background-color:#F7F7F7 ;
+background: #FFFFFF;
+gridline-color:#438AFF;
+text-align:center;
+font-size:10px;
+font-weight:490;
+gridline-width:1px;
+
+}
+
+QTableWidget::item
+{border:1px solid #438AFF;
+border-bottom:1px solid #438AFF;
+border-top:1px solid #438AFF;
+}
+
+QTableWidget::item::selected
+{
+background-color:rgb(0,255,0);
+}
+
+QTableWidget QTableCornerButton::section {
+    background-color: #438AFF;
+    border: 0px solid #fffff8;
+
+}
+
+
+QScrollBar:vertical
+{
+/*background:#438AFF; */
+padding-top:20px; 
+padding-bottom:20px; 
+padding-left:0px; 
+padding-right:0px;
+border-left:1px solid #d7d7d7;
+}</string>
+   </property>
+   <property name="frameShape">
+    <enum>QFrame::NoFrame</enum>
+   </property>
+   <property name="verticalScrollBarPolicy">
+    <enum>Qt::ScrollBarAlwaysOff</enum>
+   </property>
+   <property name="showDropIndicator" stdset="0">
+    <bool>true</bool>
+   </property>
+   <property name="dragEnabled">
+    <bool>true</bool>
+   </property>
+   <property name="dragDropOverwriteMode">
+    <bool>true</bool>
+   </property>
+   <property name="dragDropMode">
+    <enum>QAbstractItemView::DragDrop</enum>
+   </property>
+   <property name="alternatingRowColors">
+    <bool>true</bool>
+   </property>
+   <property name="showGrid">
+    <bool>true</bool>
+   </property>
+   <property name="rowCount">
+    <number>2</number>
+   </property>
+   <property name="columnCount">
+    <number>100</number>
+   </property>
+   <attribute name="horizontalHeaderVisible">
+    <bool>false</bool>
+   </attribute>
+   <attribute name="horizontalHeaderDefaultSectionSize">
+    <number>40</number>
+   </attribute>
+   <attribute name="horizontalHeaderMinimumSectionSize">
+    <number>40</number>
+   </attribute>
+   <attribute name="verticalHeaderVisible">
+    <bool>false</bool>
+   </attribute>
+   <attribute name="verticalHeaderDefaultSectionSize">
+    <number>32</number>
+   </attribute>
+   <attribute name="verticalHeaderMinimumSectionSize">
+    <number>32</number>
+   </attribute>
+   <row>
+    <property name="text">
+     <string>Loop</string>
+    </property>
+   </row>
+   <row>
+    <property name="text">
+     <string>Length</string>
+    </property>
+   </row>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+  </widget>
+  <widget class="QTableWidget" name="tableWidget_RowNote">
+   <property name="geometry">
+    <rect>
+     <x>315</x>
+     <y>190</y>
+     <width>1601</width>
+     <height>35</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">
+
+QTableWidget::cell:selected,QTableView::cell:selected {				    /*设置选中的视图项*/
+        background: rgb(0，255，0);
+        
+}
+
+QHeaderView::section{
+border:0px;
+border-radius:0px;
+padding:2px 4px;
+background-color:#f2f2f2;
+color:#000000;
+width:100;
+height:32;
+align:Center;
+font-size:20px;
+font-family:SourceHanSansSC-Medium;
+font-weight:500
+}
+
+QTableWidget
+{
+alternate-background-color:#F7F7F7 ;
+background: #FFFFFF;
+gridline-color:#438AFF;
+text-align:center;
+font-size:10px;
+font-weight:480;
+gridline-width:2px;
+
+}
+
+QTableWidget::item
+{
+border:2px solid #438AFF;
+
+margin-left:1px;
+margin-right:1px;
+
+
+}
+
+QTableWidget::item::selected
+{
+background-color:rgb(0,255,0);
+}
+
+QTableWidget QTableCornerButton::section {
+    background-color: #438AFF;
+    border: 0px solid #fffff8;
+
+}
+
+
+QScrollBar:vertical
+{
+/*background:#438AFF; */
+padding-top:20px; 
+padding-bottom:20px; 
+padding-left:0px; 
+padding-right:0px;
+border-left:1px solid #d7d7d7;
+}</string>
+   </property>
+   <property name="frameShape">
+    <enum>QFrame::NoFrame</enum>
+   </property>
+   <property name="verticalScrollBarPolicy">
+    <enum>Qt::ScrollBarAlwaysOff</enum>
+   </property>
+   <property name="horizontalScrollBarPolicy">
+    <enum>Qt::ScrollBarAlwaysOff</enum>
+   </property>
+   <property name="showGrid">
+    <bool>false</bool>
+   </property>
+   <property name="rowCount">
+    <number>1</number>
+   </property>
+   <property name="columnCount">
+    <number>100</number>
+   </property>
+   <attribute name="horizontalHeaderVisible">
+    <bool>false</bool>
+   </attribute>
+   <attribute name="horizontalHeaderDefaultSectionSize">
+    <number>40</number>
+   </attribute>
+   <attribute name="horizontalHeaderMinimumSectionSize">
+    <number>40</number>
+   </attribute>
+   <attribute name="verticalHeaderVisible">
+    <bool>false</bool>
+   </attribute>
+   <attribute name="verticalHeaderDefaultSectionSize">
+    <number>32</number>
+   </attribute>
+   <attribute name="verticalHeaderMinimumSectionSize">
+    <number>32</number>
+   </attribute>
+   <row>
+    <property name="text">
+     <string>操作备注</string>
+    </property>
+   </row>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+  </widget>
+  <widget class="QTableWidget" name="tableWidget_Main">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="geometry">
+    <rect>
+     <x>315</x>
+     <y>230</y>
+     <width>1601</width>
+     <height>481</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">/*
+QTableWidget::cell:selected {		
+background: rgb(0，255，0);
+} 
+*/
+QHeaderView::section{
+border:0px solid;
+border-radius:0px;
+padding:2px 4px;
+background-color:#438AFF;
+color:#ffffff;
+width:40;
+height:40;
+text-align:Center;
+font-size:20px;
+}
+
+QTableWidget#tableWidget_Main
+{
+alternate-background-color:#F7F7F7 ;
+background: #FFFFFF;
+gridline-color:#438AFF;
+text-align:center;
+gridline-width: 1px;
+
+}
+
+QTableWidget::item
+{border:1px solid #438AFF;
+border-bottom:1px solid #438AFF;
+border-top:1px solid #438AFF;
+border-left:1px solid #438AFF;
+
+}
+
+QTableWidget::item::selected
+{
+background-color:rgb(0,255,0);
+}
+
+QTableWidget QTableCornerButton::section {
+    background-color: #438AFF;
+    border: 0px solid #fffff8;
+
+}
+
+
+QScrollBar:vertical
+{
+/*background:#438AFF; */
+padding-top:20px; 
+padding-bottom:20px; 
+padding-left:0px; 
+padding-right:0px;
+border-left:1px solid #d7d7d7;
+}</string>
+   </property>
+   <property name="frameShape">
+    <enum>QFrame::NoFrame</enum>
+   </property>
+   <property name="verticalScrollBarPolicy">
+    <enum>Qt::ScrollBarAlwaysOff</enum>
+   </property>
+   <property name="alternatingRowColors">
+    <bool>true</bool>
+   </property>
+   <property name="rowCount">
+    <number>16</number>
+   </property>
+   <property name="columnCount">
+    <number>100</number>
+   </property>
+   <attribute name="horizontalHeaderDefaultSectionSize">
+    <number>40</number>
+   </attribute>
+   <attribute name="horizontalHeaderMinimumSectionSize">
+    <number>40</number>
+   </attribute>
+   <attribute name="verticalHeaderVisible">
+    <bool>false</bool>
+   </attribute>
+   <attribute name="verticalHeaderDefaultSectionSize">
+    <number>40</number>
+   </attribute>
+   <attribute name="verticalHeaderMinimumSectionSize">
+    <number>40</number>
+   </attribute>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+  </widget>
+  <widget class="QTableWidget" name="tableWidget_ColNote">
+   <property name="geometry">
+    <rect>
+     <x>224</x>
+     <y>230</y>
+     <width>45</width>
+     <height>461</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">
+
+QTableWidget::cell:selected,QTableView::cell:selected {				    /*设置选中的视图项*/
+        background: rgb(0，255，0);
+        
+}
+
+QHeaderView::section{
+border:0px;
+border-radius:0px;
+padding:2px 4px;
+background-color:#438AFF;
+color:#000000;
+width:50;
+height:40;
+align:Center;
+font-size:20px;
+font-family: PingFangSC-Regular;
+font-weight:500
+}
+
+QTableWidget
+{
+alternate-background-color:#F7F7F7 ;
+background: #FFFFFF;
+gridline-color:#438AFF;
+text-align:center;
+font-size:10px;
+font-weight:480;
+gridline-width:1px;
+
+}
+
+QTableWidget::item
+{
+border:2px solid #438AFF;
+
+margin-top:1px;
+margin-buttom:1px;
+margin-left:0px;
+margin-right:5px;
+
+
+}
+
+QTableWidget::item::selected
+{
+background-color:rgb(0,255,0);
+}
+
+QTableWidget QTableCornerButton::section {
+    background-color: #438AFF;
+    border: 0px solid #fffff8;
+
+}
+
+
+QScrollBar:vertical
+{
+/*background:#438AFF; */
+padding-top:20px; 
+padding-bottom:20px; 
+padding-left:0px; 
+padding-right:0px;
+border-left:1px solid #d7d7d7;
+}</string>
+   </property>
+   <property name="frameShape">
+    <enum>QFrame::NoFrame</enum>
+   </property>
+   <property name="verticalScrollBarPolicy">
+    <enum>Qt::ScrollBarAlwaysOff</enum>
+   </property>
+   <property name="horizontalScrollBarPolicy">
+    <enum>Qt::ScrollBarAlwaysOff</enum>
+   </property>
+   <property name="showGrid">
+    <bool>false</bool>
+   </property>
+   <property name="rowCount">
+    <number>16</number>
+   </property>
+   <property name="columnCount">
+    <number>1</number>
+   </property>
+   <attribute name="horizontalHeaderVisible">
+    <bool>true</bool>
+   </attribute>
+   <attribute name="horizontalHeaderDefaultSectionSize">
+    <number>47</number>
+   </attribute>
+   <attribute name="horizontalHeaderMinimumSectionSize">
+    <number>47</number>
+   </attribute>
+   <attribute name="verticalHeaderVisible">
+    <bool>false</bool>
+   </attribute>
+   <attribute name="verticalHeaderDefaultSectionSize">
+    <number>40</number>
+   </attribute>
+   <attribute name="verticalHeaderMinimumSectionSize">
+    <number>40</number>
+   </attribute>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <column>
+    <property name="text">
+     <string/>
+    </property>
+   </column>
+  </widget>
+  <widget class="QCustomPlot" name="widget" native="true">
+   <property name="geometry">
+    <rect>
+     <x>220</x>
+     <y>710</y>
+     <width>1691</width>
+     <height>321</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">QWidget#widget
+{
+border:3px solid #438AFF;
+}</string>
+   </property>
+  </widget>
+  <widget class="QTableWidget" name="tableWidget_Seg">
+   <property name="geometry">
+    <rect>
+     <x>315</x>
+     <y>70</y>
+     <width>1601</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">
+QTableWidget::cell:selected,QTableView::cell:selected {				    /*设置选中的视图项*/
+        background: rgb(0，255，0);
+        
+}
+
+QHeaderView::section{
+border:0px;
+border-radius:0px;
+padding:2px 4px;
+background-color:#f2f2f2;
+color:#000000;
+width:40;
+height:32;
+align:Center;
+font-size:16px;
+font-family: PingFangSC-Regular;
+font-weight:600
+}
+
+QTableWidget
+{
+alternate-background-color:#F7F7F7 ;
+background: #FFFFFF;
+gridline-color:#438AFF;
+text-align:center;
+font-size:8px;
+font-weight:500;
+gridline-width:1px;
+
+}
+
+QTableWidget::item
+{border:1px solid #438AFF;
+border-bottom:3px solid #438AFF;
+border-top:3px solid #438AFF;
+}
+
+QTableWidget::item::selected
+{
+background-color:rgb(0,255,0);
+}
+
+QTableWidget QTableCornerButton::section {
+    background-color: #438AFF;
+    border: 0px solid #fffff8;
+
+}
+
+
+QScrollBar:vertical
+{
+/*background:#438AFF; */
+padding-top:20px; 
+padding-bottom:20px; 
+padding-left:0px; 
+padding-right:0px;
+border-left:1px solid #d7d7d7;
+}</string>
+   </property>
+   <property name="frameShape">
+    <enum>QFrame::NoFrame</enum>
+   </property>
+   <property name="verticalScrollBarPolicy">
+    <enum>Qt::ScrollBarAlwaysOff</enum>
+   </property>
+   <property name="horizontalScrollBarPolicy">
+    <enum>Qt::ScrollBarAlwaysOff</enum>
+   </property>
+   <property name="rowCount">
+    <number>1</number>
+   </property>
+   <property name="columnCount">
+    <number>100</number>
+   </property>
+   <attribute name="horizontalHeaderVisible">
+    <bool>false</bool>
+   </attribute>
+   <attribute name="horizontalHeaderDefaultSectionSize">
+    <number>40</number>
+   </attribute>
+   <attribute name="horizontalHeaderMinimumSectionSize">
+    <number>40</number>
+   </attribute>
+   <attribute name="verticalHeaderVisible">
+    <bool>false</bool>
+   </attribute>
+   <attribute name="verticalHeaderDefaultSectionSize">
+    <number>32</number>
+   </attribute>
+   <attribute name="verticalHeaderMinimumSectionSize">
+    <number>32</number>
+   </attribute>
+   <row>
+    <property name="text">
+     <string>Segment</string>
+    </property>
+   </row>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+   <column/>
+  </widget>
+  <widget class="QLabel" name="label_2">
+   <property name="geometry">
+    <rect>
+     <x>235</x>
+     <y>80</y>
+     <width>74</width>
+     <height>18</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">QLabel#label_2
+{
+border-image: url(:/PulseImage/Segment备份.png);
+}</string>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_3">
+   <property name="geometry">
+    <rect>
+     <x>267</x>
+     <y>109</y>
+     <width>41</width>
+     <height>17</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">QLabel
+{
+border-image: url(:/PulseImage/Loop备份.png);
+}</string>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_4">
+   <property name="geometry">
+    <rect>
+     <x>221</x>
+     <y>140</y>
+     <width>87</width>
+     <height>19</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">QLabel
+{
+border-image: url(:/PulseImage/Length(ns).png);
+}</string>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_5">
+   <property name="geometry">
+    <rect>
+     <x>227</x>
+     <y>198</y>
+     <width>80</width>
+     <height>20</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">QLabel
+{
+border-image: url(:/PulseImage/操作备注.png);
+}</string>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+  </widget>
+  <widget class="QTableWidget" name="tableWidget_Channel">
+   <property name="geometry">
+    <rect>
+     <x>267</x>
+     <y>230</y>
+     <width>50</width>
+     <height>461</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">
+
+/*QTableWidget::cell:selected,QTableView::cell:selected {				   
+        background: rgb(0，255，0);
+        
+}*/
+
+QHeaderView::section{
+border:0px;
+border-radius:0px;
+padding:2px 4px;
+background-color:#438AFF;
+color:#ffffff;
+width:50;
+height:40;
+align:Center;
+font-size:16px;
+/*font-family: PingFangSC-Regular;*/
+font-weight:600
+}
+
+QTableWidget
+{
+alternate-background-color:#F7F7F7 ;
+background: #FFFFFF;
+gridline-color:#438AFF;
+text-align:center;
+font-size:11px;
+font-weight:480;
+gridline-width:1px;
+border-right:3px;
+
+}
+
+QTableWidget::item
+{border:1px solid #438AFF;
+border-bottom:1px solid #438AFF;
+border-top:1px solid #438AFF;
+border-right:2px solid #438AFF;
+}
+
+QTableWidget::item::selected
+{
+background-color:rgb(0,255,0);
+}
+
+QTableWidget QTableCornerButton::section {
+    background-color: #438AFF;
+    border: 0px solid #fffff8;
+
+}
+
+
+QScrollBar:vertical
+{
+/*background:#438AFF; */
+padding-top:20px; 
+padding-bottom:20px; 
+padding-left:0px; 
+padding-right:0px;
+border-left:1px solid #d7d7d7;
+}</string>
+   </property>
+   <property name="frameShape">
+    <enum>QFrame::NoFrame</enum>
+   </property>
+   <property name="verticalScrollBarPolicy">
+    <enum>Qt::ScrollBarAlwaysOff</enum>
+   </property>
+   <property name="horizontalScrollBarPolicy">
+    <enum>Qt::ScrollBarAlwaysOff</enum>
+   </property>
+   <property name="showGrid">
+    <bool>true</bool>
+   </property>
+   <property name="rowCount">
+    <number>16</number>
+   </property>
+   <property name="columnCount">
+    <number>1</number>
+   </property>
+   <attribute name="horizontalHeaderVisible">
+    <bool>true</bool>
+   </attribute>
+   <attribute name="horizontalHeaderDefaultSectionSize">
+    <number>50</number>
+   </attribute>
+   <attribute name="horizontalHeaderMinimumSectionSize">
+    <number>50</number>
+   </attribute>
+   <attribute name="verticalHeaderVisible">
+    <bool>false</bool>
+   </attribute>
+   <attribute name="verticalHeaderDefaultSectionSize">
+    <number>40</number>
+   </attribute>
+   <attribute name="verticalHeaderMinimumSectionSize">
+    <number>40</number>
+   </attribute>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <row/>
+   <column>
+    <property name="text">
+     <string>通道</string>
+    </property>
+   </column>
+  </widget>
+  <zorder>frame_Top</zorder>
+  <zorder>label_3</zorder>
+  <zorder>tableWidget_RowNote</zorder>
+  <zorder>tableWidget_Loop</zorder>
+  <zorder>tableWidget_ColNote</zorder>
+  <zorder>tableWidget_Main</zorder>
+  <zorder>widget</zorder>
+  <zorder>tableWidget_Seg</zorder>
+  <zorder>label_2</zorder>
+  <zorder>label_4</zorder>
+  <zorder>label_5</zorder>
+  <zorder>frame</zorder>
+  <zorder>tableWidget_Channel</zorder>
+ </widget>
+ <layoutdefault spacing="6" margin="11"/>
+ <customwidgets>
+  <customwidget>
+   <class>QCustomPlot</class>
+   <extends>QWidget</extends>
+   <header location="global">qcustomplot.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
+ <resources>
+  <include location="PulseGenerator.qrc"/>
+ </resources>
+ <connections/>
+</ui>

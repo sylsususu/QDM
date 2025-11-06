@@ -1,0 +1,44 @@
+<RCC>
+    <qresource prefix="/">
+        <file>PulseImage/btn_关闭_nor.PNG</file>
+        <file>PulseImage/btn_最大化_nor.PNG</file>
+        <file>PulseImage/btn_最小化_nor.PNG</file>
+        <file>PulseImage/LeftNavi.jpg</file>
+        <file>PulseImage/播放序列.png</file>
+        <file>PulseImage/关闭_hover.PNG</file>
+        <file>PulseImage/加载.png</file>
+        <file>PulseImage/矩形.png</file>
+        <file>PulseImage/矩形备份 3.png</file>
+        <file>PulseImage/矩形备份 7(1).png</file>
+        <file>PulseImage/矩形备份 7.png</file>
+        <file>PulseImage/矩形备份 11.png</file>
+        <file>PulseImage/矩形备份 182(1).png</file>
+        <file>PulseImage/矩形备份 182.png</file>
+        <file>PulseImage/连接设备.png</file>
+        <file>PulseImage/脉冲白色.png</file>
+        <file>PulseImage/清除.png</file>
+        <file>PulseImage/添加.png</file>
+        <file>PulseImage/通道.png</file>
+        <file>PulseImage/退出最大化_hig.PNG</file>
+        <file>PulseImage/未标题-2_画板 1 副本.PNG</file>
+        <file>PulseImage/序列烧录.png</file>
+        <file>PulseImage/资源 5@4x备份 2@2x.png</file>
+        <file>PulseImage/最大化_hov.PNG</file>
+        <file>PulseImage/左侧功能.png</file>
+        <file>PulseImage/1206补充切图-保存_序列预览/保存.png</file>
+        <file>PulseImage/1206补充切图-保存_序列预览/序列预览.png</file>
+        <file>PulseImage/1206补充切图-保存_序列预览/悬浮点击保存.png</file>
+        <file>PulseImage/1206补充切图-保存_序列预览/悬浮点击加载.png</file>
+        <file>PulseImage/1206补充切图-保存_序列预览/悬浮点击清除.png</file>
+        <file>PulseImage/1206补充切图-保存_序列预览/悬浮点击序列烧录.png</file>
+        <file>PulseImage/1206补充切图-保存_序列预览/悬浮点击序列预览.png</file>
+        <file>PulseImage/switch.png</file>
+        <file>PulseImage/on.png</file>
+        <file>PulseImage/操作备注.png</file>
+        <file>PulseImage/Length(ns).png</file>
+        <file>PulseImage/Loop备份.png</file>
+        <file>PulseImage/Segment备份.png</file>
+        <file>PulseImage/ICON_1.PNG</file>
+        <file>PulseImage/PulseLogo.PNG</file>
+    </qresource>
+</RCC>

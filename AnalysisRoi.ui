@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>AnalysisRoiClass</class>
+ <widget class="QDialog" name="AnalysisRoiClass">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>320</width>
+    <height>148</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>AnalysisRoi</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">
+QPushButton{
+font-size: 14px;
+font-family: &quot;Microsoft YaHei UI Light&quot;;
+font-weight: 400;
+color: #FFFFFF;
+line-height: 17px;
+border: 1px solid #979797;
+}
+
+
+QPushButton:disabled {
+font-size: 14px;
+font-family: &quot;Microsoft YaHei UI Light&quot;;
+font-weight: 400;
+color: #656565;
+line-height: 17px;
+border: 1px solid #979797;
+}
+
+QLabel{
+font-size: 16px;
+font-family: &quot;Microsoft YaHei UI Light&quot;;
+
+font-weight: 400;
+color: #FFFFFF;
+line-height: 22px;
+
+}
+
+
+
+QLineEdit:focus { border-radius: 2px; border: 2px solid rgba(60,154,232,0.2); }
+QLineEdit { border-radius: 2px; border: 1px solid rgba(255,255,255,0.2); }
+QLineEdit { font-size: 14px; font-family: &quot;Microsoft YaHei UI Light&quot;;
+ font-weight: 400; color: rgba(255,255,255,0.3); line-height: 22px; }
+
+QWidget{
+background: #060606;
+}</string>
+  </property>
+  <widget class="QGroupBox" name="groupBox_AnalyRoiSetting">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>320</width>
+     <height>150</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">border: none;background-color: rgb(42, 41, 41); color:white;</string>
+   </property>
+   <property name="title">
+    <string/>
+   </property>
+   <property name="checkable">
+    <bool>false</bool>
+   </property>
+   <widget class="QLabel" name="label_5">
+    <property name="geometry">
+     <rect>
+      <x>16</x>
+      <y>55</y>
+      <width>16</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">font-size: 16px;
+font-family: &quot;Microsoft YaHei UI Light&quot;;
+font-weight: 400;
+color: #FFFFFF;
+line-height: 22px;</string>
+    </property>
+    <property name="text">
+     <string>X</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="lineEdit_AnalyRoiX">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>33</x>
+      <y>50</y>
+      <width>80</width>
+      <height>32</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QLineEdit:focus { border-radius: 2px; border: 2px solid rgba(60,154,232,1); }
+QLineEdit { border-radius: 2px; border: 1px solid rgba(255,255,255,0.2); }
+QLineEdit { font-size: 14px; font-family: &quot;Microsoft YaHei UI Light&quot;;
+ font-weight: 400; color: rgba(255,255,255,1); line-height: 22px; }</string>
+    </property>
+    <property name="text">
+     <string>0</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_18">
+    <property name="geometry">
+     <rect>
+      <x>123</x>
+      <y>55</y>
+      <width>16</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">font-size: 16px;
+font-family: &quot;Microsoft YaHei UI Light&quot;;
+font-weight: 400;
+color: #FFFFFF;
+line-height: 22px;</string>
+    </property>
+    <property name="text">
+     <string>Y</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="lineEdit_AnalyRoiY">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>140</x>
+      <y>50</y>
+      <width>80</width>
+      <height>32</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QLineEdit:focus { border-radius: 2px; border: 2px solid rgba(60,154,232,1); }
+QLineEdit { border-radius: 2px; border: 1px solid rgba(255,255,255,0.2); }
+QLineEdit { font-size: 14px; font-family: &quot;Microsoft YaHei UI Light&quot;;
+ font-weight: 400; color: rgba(255,255,255,1); line-height: 22px; }</string>
+    </property>
+    <property name="text">
+     <string>0</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_20">
+    <property name="geometry">
+     <rect>
+      <x>16</x>
+      <y>103</y>
+      <width>16</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">font-size: 16px;
+font-family: &quot;Microsoft YaHei UI Light&quot;;
+font-weight: 400;
+color: #FFFFFF;
+line-height: 22px;</string>
+    </property>
+    <property name="text">
+     <string>W</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="lineEdit_AnalyRoiW">
+    <property name="geometry">
+     <rect>
+      <x>33</x>
+      <y>98</y>
+      <width>80</width>
+      <height>32</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QLineEdit:focus { border-radius: 2px; border: 2px solid rgba(60,154,232,1); }
+QLineEdit { border-radius: 2px; border: 1px solid rgba(255,255,255,0.2); }
+QLineEdit { font-size: 14px; font-family: &quot;Microsoft YaHei UI Light&quot;;
+ font-weight: 400; color: rgba(255,255,255,1); line-height: 22px; }</string>
+    </property>
+    <property name="text">
+     <string>3000</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_21">
+    <property name="geometry">
+     <rect>
+      <x>123</x>
+      <y>103</y>
+      <width>16</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">font-size: 16px;
+font-family: &quot;Microsoft YaHei UI Light&quot;;
+font-weight: 400;
+color: #FFFFFF;
+line-height: 22px;</string>
+    </property>
+    <property name="text">
+     <string>H</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="lineEdit_AnalyRoiH">
+    <property name="geometry">
+     <rect>
+      <x>140</x>
+      <y>98</y>
+      <width>80</width>
+      <height>32</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QLineEdit:focus { border-radius: 2px; border: 2px solid rgba(60,154,232,1); }
+QLineEdit { border-radius: 2px; border: 1px solid rgba(255,255,255,0.2); }
+QLineEdit { font-size: 14px; font-family: &quot;Microsoft YaHei UI Light&quot;;
+ font-weight: 400; color: rgba(255,255,255,1); line-height: 22px; }</string>
+    </property>
+    <property name="text">
+     <string>3000</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_AnalySetROI">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>240</x>
+      <y>50</y>
+      <width>56</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton:Hover
+{
+	border-radius: 2px;
+	border: 1px solid #1765AD;
+}
+QPushButton:pressed
+{
+	background: #1765AD;
+	border-radius: 2px;
+}
+QPushButton{
+font-size: 14px;
+font-family: &quot;Microsoft YaHei UI Light&quot;;
+font-weight: 400;
+color: #FFFFFF;
+line-height: 17px;
+border: 1px solid #979797;
+}
+
+
+QPushButton:disabled {
+font-size: 14px;
+font-family: &quot;Microsoft YaHei UI Light&quot;;
+font-weight: 400;
+color: #656565;
+line-height: 17px;
+border: 1px solid #979797;
+}
+</string>
+    </property>
+    <property name="text">
+     <string>Roi设置</string>
+    </property>
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_39">
+    <property name="geometry">
+     <rect>
+      <x>16</x>
+      <y>12</y>
+      <width>131</width>
+      <height>22</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">font-size: 16px;
+font-family: &quot;Microsoft YaHei UI Light&quot;;
+font-weight: 400;
+color: #FFFFFF;
+line-height: 22px;</string>
+    </property>
+    <property name="text">
+     <string>矢量分析ROI设置</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_AnalyDisROI">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>240</x>
+      <y>100</y>
+      <width>56</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton:Hover
+{
+	border-radius: 2px;
+	border: 1px solid #1765AD;
+}
+QPushButton:pressed
+{
+	background: #1765AD;
+	border-radius: 2px;
+}
+QPushButton{
+font-size: 14px;
+font-family: &quot;Microsoft YaHei UI Light&quot;;
+font-weight: 400;
+color: #FFFFFF;
+line-height: 17px;
+border: 1px solid #979797;
+}
+
+
+QPushButton:disabled {
+font-size: 14px;
+font-family: &quot;Microsoft YaHei UI Light&quot;;
+font-weight: 400;
+color: #656565;
+line-height: 17px;
+border: 1px solid #979797;
+}
+</string>
+    </property>
+    <property name="text">
+     <string>Roi取消</string>
+    </property>
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+   </widget>
+  </widget>
+ </widget>
+ <layoutdefault spacing="6" margin="11"/>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,29 @@
+<RCC>
+  <qresource prefix="/">
+    <file>Image/stop-hover.png</file>
+    <file>Image/后-hover.png</file>
+    <file>Image/上升-hover.png</file>
+    <file>Image/下降-hover.png</file>
+    <file>Image/右-hover.png</file>
+    <file>Image/左-hover.png</file>
+    <file>Image/前-hover.png</file>
+    <file>resource/radius_back.png</file>
+    <file>resource/radius_front.png</file>
+    <file>Image/白删除-01.svg</file>
+    <file>Image/删除.svg</file>
+    <file>Image/删除.png</file>
+    <file>Image/后.png</file>
+    <file>Image/前.png</file>
+    <file>Image/上升.png</file>
+    <file>Image/下降.png</file>
+    <file>Image/右.png</file>
+    <file>Image/左.png</file>
+    <file>Image/关闭.png</file>
+    <file>Image/最小化.png</file>
+    <file>Image/stop.png</file>
+    <file>Image/treeclose.png</file>
+    <file>Image/treeopen.png</file>
+    <file>Image/off.png</file>
+    <file>Image/on.png</file>
+  </qresource>
+</RCC>

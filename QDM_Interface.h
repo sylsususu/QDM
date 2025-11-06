@@ -1,0 +1,416 @@
+#pragma once
+#include <QtWidgets/QDialog>
+#include "ui_QDM_Interface.h"
+#include<qserialport.h>
+#include<qserialportinfo.h>
+#include <windows.h>
+#include<opencv2/opencv.hpp>
+#include<opencv2/world.hpp>
+#include"levmar-2.6/levmar.h"
+#include <omp.h>
+#include <thread>
+#include"qcustomplot.h"
+#include<QtConcurrent/qtconcurrentrun.h>
+#include <time.h>
+#include<qtreewidget.h>
+#include <QDateTime>
+#include <QLineEdit>
+#include <QRegExp>
+#include <QRegExpValidator>
+#include<cmath>
+#include <QElapsedTimer>
+
+#include "SaveThread.h"
+#include"MicrowaveSrcCtlNewProtocol.h"
+#include "PulseSet.h"
+#include "PulseControl.h"
+#include "CurrentSource.h"
+#include "MotorController.h"
+#include <CtuCamCap.h>
+#include<SweepMeasureThread.h>
+#include<FixMeasureThread.h>
+#include "camera.h"
+#include"CameraDataProcess.h"
+#include"ColorMapWidget.h"
+#include"radiusprogressbar.h"
+#include "AnalysisRoi.h"
+#include "MyGraphicsView.h"
+#include "MVCamera.h"
+#include "MVCamCapture.h"
+#include "MVCameraSweep.h"
+#include "MVCameraFix.h"
+#define MVCAMERA
+struct point {
+	double x;
+	double y;
+};
+using namespace cv;
+class QDM_Interface : public QDialog
+{
+    Q_OBJECT
+
+public:
+    QDM_Interface(QWidget *parent = nullptr);
+    ~QDM_Interface();
+
+
+    void on_LoadData();
+    /// 设备控制界面初始化///////////  
+    void initMicroWave();
+    void initPulse();
+	void inittreeWidget();
+	void initCurrentCom();
+    void Sleep(int msec);
+	void paintEvent(QPaintEvent *event) override {
+
+		QPainter painter(this);
+		painter.setPen(QPen(QColor("#E6E6E6"), 2));  // 设置边框的颜色和宽度
+		painter.drawRect(ui.widget->x(), ui.widget->y(), ui.widget->width(), ui.widget->height());  // 绘制边框
+	}
+    static void gaussianPara(double* p, double* x, int m, int n, void* data);
+	void showProgress(int i, int countsize);
+protected:
+    bool eventFilter(QObject* obj, QEvent* event);
+public slots:
+    void on_MouseMoveCustomplot(QMouseEvent*);
+	void on_MouseMoveGraphicsView(QMouseEvent*);
+    ///微波相关/////////
+    void connectWave();
+    void setFreMode();
+    void sendWaveMode();
+    void sendSweepFre();
+    void sendFixFre();
+    void startWave();
+    void resetWave();
+    void getWaveStatus(int);
+    /////////相机相关///////
+    void connectCamera();
+    void setExposureMode(bool);
+    void setExposureTime(QString);
+    void setTriggerMode();
+    void softTriggerOnce();
+    void savePicture();
+    void choosePath();
+    void setAutoSave();
+    void setRoi();
+	void showCapImg(cv::Mat showMat);
+	void autoFindExpTime();
+	void showFps();
+	void showFps2(double t);
+	void saveImage(const cv::Mat& image, const std::string& filename);
+	void setBinning();
+	void setCapMode();
+	void setGain();
+	void onContrastSliderValueChanged();
+	void onGammaSliderValueChanged();
+	void onGainSliderValueChanged();
+	void onlineEditValueChanged();
+    //脉冲相关 
+    void openPulseSettingPage();
+    void clearPulseManual();
+	void SetPulseParam(int cycleTime, int pulseNumbers, QVector<float>A0, QVector<float>A1, QVector<float>A2);
+	void SetPulseTimesParam(int	startTime0_0, int ctuTime0_0, int	startTime1_0, int	ctuTime1_0, int	startTime1_1, int	ctuTime1_1,
+		int	startTime2_0, int	ctuTime2_0);
+	void connectPulse();
+
+	//电机相关
+	void connectMotor();
+	void findZero();
+	void recordLoadPosition();
+	void recordUnloadPosition();
+	void loadPos();
+	void unloadPos();
+	void motorStop();
+	void motorForward();
+	void motorBackward();
+	void motorLeft();
+	void motorRight();
+	void motorUp();
+	void motorDown();
+	void setMotorMode();
+	void motorSlowStop();
+	void findZeroOk();
+	void showMotorPos(int pos_x, int pos_y, int pos_z);
+	void setMotorXButon(bool isRun);
+	void setMotorYButon(bool isRun);
+	void setMotorZButon(bool isRun);
+	void setButtonAble(bool enable);
+	//LED相关
+	void connectCurrent();
+	/// <summary>
+	/// /继电器控制激光及LED
+	/// </summary>
+	void openLaser();
+	void openLed();
+	void connectLight();
+	void Current(float _current,float voltage);
+	void CurrentOK();
+	void VoltageOK();
+	void OutOK();
+	void CurrentAndVoltageOK();
+	void currentOut();
+	void currentSet();
+	//线圈相关
+	void connectCoilXYZ();
+	void coilXSet();
+	void coilXOut();
+	void coilYSet();
+	void coilYOut();
+	void coilZSet();
+	void coilZOut();
+	void CoilXOutOK();
+	void CoilXCurrentAndVoltageOK();
+	void CoilYOutOK();
+	void CoilYCurrentAndVoltageOK();
+	void CoilZOutOK();
+	void CoilZCurrentAndVoltageOK();
+	//debug
+	void CurrentX(float _current, float voltage);
+	void CurrentY(float _current, float voltage);
+	void CurrentZ(float _current, float voltage);
+    //对比度分析相关
+    void startSweepMeasure();
+	void stopSweep();
+    void startFixFreMeasure();
+	void stopFixFre();
+	void startAllFixFre();
+    void drawSweepData(double, double);
+	void processSweepData(double, cv::Mat on, cv::Mat off);
+	void processSweepData2(double frevalue, int count, unsigned char* rawBuffer);
+    void showSweepPic(cv::Mat showMat);
+    void clearPulse();
+    void showFixFreImg(cv::Mat onmat, cv::Mat offmat);
+	void fastShowFixFreImg(int index,cv::Mat tmpmat);
+	void sweepLostPic();
+	void fixLostPic();
+	void sendPlus(int s);
+	void changeLockState(bool);
+    //定量分析计算初始参数相关   
+    void importPicNoMag();
+    void importPicWithMag();
+    void averODMRAnalysisNoMag();
+	void averODMRAnalysisWithMag();
+    void getInitParaNoMag();
+	void getInitParaWithMag();
+    void changePara(int row, int col);
+	void importParaWithMag();
+	void importParaNoMag();
+	void saveParaNoMag();
+	void saveParaWithMag();
+	void loadNoMagData();
+    ///定量分析综合计算
+    void setDataDimension(QString);
+	bool findAllSinglePeak(vector<double> x_Vec, vector<double> y_Vec, vector<int>& peakIndexVec);
+	bool findAllSinglePeak_auto(vector<double> x_Vec, vector<double> y_Vec, vector<int>& peakIndexVec);
+	int findIndex(const std::vector<double>& data, double value);
+	void startAnalysisNoMag();
+    void startAnalysisWithMag();
+    void startAllAnalysis();//综合矢量分析
+	void calMagDirection();
+	void openColorMapPage();
+	void contrastAnalysis();//自身矢量分析
+	void setAnalysisMode();
+	void setAnalysisRoi();
+	void SetAnalysisRoiParam(int x,int y,int w,int h);
+	void CancelAnalysisRoiParam();
+	//计算灵敏度
+	void calParams();
+	void calSensitivity();
+	//离线roi界面
+	void openRoiAnalysePage();
+	//重写鼠标事件
+	void mousePressEvent(QMouseEvent *event);
+	void mouseMoveEvent(QMouseEvent *event);
+	// 最小化窗口
+	void on_minimizeButton_clicked() {
+		setWindowState(Qt::WindowMinimized);
+	}
+	void on_closeButton_clicked()
+	{
+		QMessageBox msgBox;
+		msgBox.setStyleSheet("QMessageBox{ background-color: black;font-size: 16px; }"
+			"QMessageBox QLabel{ color: white; font-size: 16px;}"
+			"QMessageBox QPushButton{ background-color: rgb(42, 41, 41); color: white; font-size: 16px;}"); // 设置弹框的样式
+		msgBox.setWindowTitle("确定关闭");
+		msgBox.setText("确定要关闭窗口吗？");
+		msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+		msgBox.setDefaultButton(QMessageBox::No);
+		int ret = msgBox.exec();
+		if (ret == QMessageBox::Yes) {
+			close();  // 用户点击了确认按钮，关闭窗口
+		}
+		else {
+			// 用户点击了取消按钮，不执行任何操作
+		}
+	}
+
+	void startAllOut();
+
+	//日志相关
+	void addLogEntry(const QString &logMessage, QTextEdit *textEdit);
+	void clearLog(QTextEdit *textEdit);
+	void ClearLog();
+
+
+	void onRadioButtonToggled(bool checked)
+	{
+		if (checked) {
+			setTriggerMode();
+		}
+	}
+	void onRadioButtonToggled0(bool checked)
+	{
+		if (checked) {
+			setCapMode();
+		}
+	}
+	void onRadioButtonToggledGain(bool checked)
+	{
+		if (checked) {
+			setGain();
+		}
+	}
+	
+	//灰度值显示
+	void showGrayvalue(int x,int y);
+	void updateGrayValue();
+
+	//平滑曲线
+	int LinearSmooth3(vector<double>& input, long size);
+	int LinearSmooth5(vector<double>& input, long size);
+	int LinearSmooth7(vector<double>& input, long size);
+	
+private:
+	//主界面
+    Ui::QDM_InterfaceClass ui;								
+    QGraphicsScene* m_scene;								
+    QGraphicsPixmapItem* m_image_item;	
+	int threadNum;
+	QPoint m_dragPosition;
+
+	//微波
+    MicrowaveSrcCtlNewProtocol *waveControl;	
+
+	//相机
+	camera* FLcamera;
+	CtuCamCap *ctuCapThread;								
+	SweepMeasureThread *sweepThread;						
+	FixMeasureThread* fixFreThread;		
+	time_t ts;
+
+	MVCamera* m_mvCamera;
+	MVCamCapture* m_mvCapThread;
+	MVCameraSweep*m_mvSweepThread;
+	MVCameraFix* m_mvFixFreThread;
+
+	//电机
+	MotorController* motorController;
+	bool isFindZero = false;
+
+	//脉冲
+	PulseControl* pulseControl;
+	int pulse_cycleTime=0;
+	int  pulse_pulseNumbers=0;
+	QVector<float> pulse_A0;
+	QVector<float> pulse_A1;
+	QVector<float> pulse_A2;
+	bool is_SetPulseParamOk = false;
+	bool is_ConnectPuls = false;
+
+	//脉冲起点
+	int	pulse_startTime0_0 = 0;
+	//脉冲持续
+	int pulse_ctuTime0_0 = 0;
+	//相机起点0
+	int	pulse_startTime1_0 = 0;
+	//相机起点1
+	int	pulse_startTime1_1 = 0;
+	//相机持续0
+	int	pulse_ctuTime1_0 = 0;
+	//相机持续1
+	int	pulse_ctuTime1_1 = 0;
+	//微波开关起点
+	int	pulse_startTime2_0 = 0;
+	//微波开关持续
+	int	pulse_ctuTime2_0 = 0;
+
+	//LED
+	CurrentSource* LED;
+
+	//线圈
+	CurrentSource* coilX;
+	CurrentSource* coilY;
+	CurrentSource* coilZ;
+	
+    //对比度
+    int currentIterNum;										
+	cv::Mat averMat, averMat_1, averMat_2, averMat_3, averMat_4, divideMat, sumMat, averMat_New;
+	float currentPulseNum;
+
+	cv::Mat onTemp;
+	cv::Mat offTemp;
+	cv::Mat onTemp_2, offTemp_2;
+	int onTempNum;
+	int offTempNum;
+	QVector<float> A0;
+	bool m_isAllFixFre = false;
+	bool m_isSweep = false;
+	bool m_isStopFix = false;
+	int m_setNums = 0;
+	
+    //定量分析
+    int picType;											//照片类型，0是基准磁场，1是待测磁场
+	QMap<double, QVector<float> > picDataNoMag;
+	QMap<double, QVector<float> > picDataWithMag;
+	//矢量分析roi
+	QMap<double, QVector<float> > picDataNoMag_roi;
+	QMap<double, QVector<float> > picDataWithMag_roi;
+    QMap<double, double > averODMRVec;
+    vector<double> paraNoMag, paraWithMag;
+    vector<double> ori_paraNoMag, ori_paraWithMag;
+    int dataDimension;										
+    vector<double> freVec;									
+    vector<vector<double>> resultFreNoMag, resultFreWithMag;
+    vector<double> magValueVec;
+	vector<double> magValueVec_x;
+	vector<double> magValueVec_y;
+	vector<double> magValueVec_z;
+	//原始数据
+	vector<double> magValueVec_raw; // 综合磁场标量结果
+	vector<double> magValueVec_x_raw; // 磁场X分量矢量
+	vector<double> magValueVec_y_raw; // 磁场Y分量矢量
+	vector<double> magValueVec_z_raw; // 磁场Z分量矢量
+    QImage colorImg, grayImg;								
+    QVector<float> templeVec;								
+    QVector<QRgb> grayColourTable;	
+	bool is_analyRoi=false;
+	cv::Rect m_analyRoi;
+	int picCols=3000;
+	int picRows=3000;
+	//伪彩图
+	ColorMapWidget* colorMapPage;
+	//灵敏度
+	double offGrayValue = 0.0;
+	bool is_calOffGrayValue = false;
+	double offGrayValueWithMag = 0.0;
+	double offGrayValueNoMag = 0.0;
+	cv::Mat imageNoMag;
+	cv::Mat imageWithMag;
+	bool is_openWithMagImg = false;
+	//灰度值显示
+	cv::Mat grayMat;
+	int imgX = 0;
+	int imgY = 0;
+	QTimer *grayValuetimer;
+
+	//扫频参数
+	cv::Mat sweepDst;
+	cv::Mat sweepOnMat;
+	cv::Mat sweepOffMat;
+
+	//ROI界面参数
+	int roiHeight;
+	int roiWidth;
+
+	QSerialPort* lightPort;
+};

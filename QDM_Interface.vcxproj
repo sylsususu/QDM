@@ -1,0 +1,178 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{5BEB3C8D-5666-42D6-889B-BAD81DA7945F}</ProjectGuid>
+    <Keyword>QtVS_v304</Keyword>
+    <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v142</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v142</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt_defaults.props')">
+    <Import Project="$(QtMsBuild)\qt_defaults.props" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
+    <QtInstall>5.9.0</QtInstall>
+    <QtModules>core;network;gui;widgets;serialport;printsupport</QtModules>
+    <QtBuildConfig>debug</QtBuildConfig>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
+    <QtInstall>5.9.0</QtInstall>
+    <QtModules>core;network;gui;widgets;serialport;printsupport</QtModules>
+    <QtBuildConfig>release</QtBuildConfig>
+  </PropertyGroup>
+  <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
+    <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
+  </Target>
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <IncludePath>.\opencv4.5.5\opencv\build\include;.\opencv4.5.5\opencv\build\include\opencv2;$(ProjectDir)CameraApiInclude;$(ProjectDir)</IncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <IncludePath>.\opencv4.5.5\opencv\build\include\opencv2;.\opencv4.5.5\opencv\build\include;$(ProjectDir)CameraApiInclude;$(ProjectDir);C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Tools\MSVC\14.11.25503\include</IncludePath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Link>
+      <AdditionalLibraryDirectories>.\opencv4.5.5\opencv\build\x64\vc14\lib;$(ProjectDir);.\MT;.\CameraApiInclude\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>opencv_world455d.lib;levmar.lib;./pulseSdk/lib/x64/USB3000.lib;MT_API.lib;MVCAMSDK_X64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ExcludePath);.\CameraApiInclude;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OpenMPSupport>true</OpenMPSupport>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Link>
+      <AdditionalLibraryDirectories>.\opencv4.5.5\opencv\build\x64\vc14\lib;$(ProjectDir);.\MT;.\CameraApiInclude\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>opencv_world455.lib;levmar.lib;./pulseSdk/lib/x64/USB3000.lib;MT_API.lib;MVCAMSDK_X64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ExcludePath);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OpenMPSupport>true</OpenMPSupport>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ClCompile>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <Optimization>Disabled</Optimization>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ClCompile>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <Optimization>MaxSpeed</Optimization>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="AnalysisRoi.cpp" />
+    <ClCompile Include="camera.cpp" />
+    <ClCompile Include="ColorMapWidget.cpp" />
+    <ClCompile Include="CtuCamCap.cpp" />
+    <ClCompile Include="CurrentSource.cpp" />
+    <ClCompile Include="FixMeasureThread.cpp" />
+    <ClCompile Include="FrameBase.cpp" />
+    <ClCompile Include="levmar-2.6\Axb.c" />
+    <ClCompile Include="levmar-2.6\lm.c" />
+    <ClCompile Include="levmar-2.6\misc.c" />
+    <ClCompile Include="MicrowaveSrcCtlNewProtocol.cpp" />
+    <ClCompile Include="MotorController.cpp" />
+    <ClCompile Include="MVCamCapture.cpp" />
+    <ClCompile Include="MVCamera.cpp" />
+    <ClCompile Include="MVCameraFix.cpp" />
+    <ClCompile Include="MVCameraSweep.cpp" />
+    <ClCompile Include="MyGraphicsView.cpp" />
+    <ClCompile Include="PulseControl.cpp" />
+    <ClCompile Include="PulseSet.cpp" />
+    <ClCompile Include="radiusprogressbar.cpp" />
+    <ClCompile Include="SaveThread.cpp" />
+    <ClCompile Include="SweepMeasureThread.cpp" />
+    <ClCompile Include="Utils.cpp" />
+    <QtRcc Include="PulseGenerator.qrc" />
+    <QtRcc Include="QDM_Interface.qrc" />
+    <QtUic Include="AnalysisRoi.ui" />
+    <QtUic Include="ColorMapWidget.ui" />
+    <QtUic Include="PulseSet.ui" />
+    <QtUic Include="QDM_Interface.ui" />
+    <QtMoc Include="QDM_Interface.h" />
+    <ClCompile Include="CameraDataProcess.cpp" />
+    <ClCompile Include="qcustomplot.cpp" />
+    <ClCompile Include="QDM_Interface.cpp" />
+    <ClCompile Include="main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="qcustomplot.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="AnalysisRoi.h" />
+    <ClInclude Include="camera.h" />
+    <ClInclude Include="CameraDataProcess.h" />
+    <QtMoc Include="MicrowaveSrcCtlNewProtocol.h" />
+    <QtMoc Include="ColorMapWidget.h" />
+    <QtMoc Include="CtuCamCap.h" />
+    <QtMoc Include="PulseSet.h" />
+    <QtMoc Include="CurrentSource.h" />
+    <QtMoc Include="MotorController.h" />
+    <QtMoc Include="MyGraphicsView.h" />
+    <QtMoc Include="MVCamCapture.h" />
+    <ClInclude Include="MVCamera.h" />
+    <QtMoc Include="MVCameraSweep.h" />
+    <QtMoc Include="MVCameraFix.h" />
+    <ClInclude Include="PulseControl.h" />
+    <QtMoc Include="radiusprogressbar.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="SaveThread.h" />
+    <ClInclude Include="Utils.h" />
+    <QtMoc Include="SweepMeasureThread.h" />
+    <QtMoc Include="FixMeasureThread.h" />
+    <ClInclude Include="FrameBase.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="QDM_Interface.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
+    <Import Project="$(QtMsBuild)\qt.targets" />
+  </ImportGroup>
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

@@ -1,0 +1,350 @@
+#include"CameraDataProcess.h"
+
+
+int CameraDataProcess::rawChangetoInt(unsigned char* inputbyte, int img_width, int img_height, QVector<int>& outputarray)
+{
+	/*
+	a0                  a1                   a2
+	10100101            0000 1111            0101  1010
+
+	b1=(a0 << 4) | (a1 & 0xf);               b2=(a2 << 4) | ((a1 & 0xf0) >> 4);
+	1010 0101 1111                           0101 1010 0000
+
+	//将500万图像数据，进行拆分重组为12bit数据;
+	//应该获取500万的1.5倍数据，拆分后得到500万数据
+	*/
+	// 	WORD* pNewFrameBuffer = (WORD*)CameraAlignMalloc(g_W_H_INFO.sensor_height*g_W_H_INFO.sensor_width * 2, 16);
+// 	BYTE BYTE_1, BYTE_2, BYTE_3;
+// 	int inddd = 0;
+// 
+// 	for (int i = 0; i < g_tFrameHead.uBytes / 3 - 1; i++)
+// 	{
+// 		BYTE_1 = *m_RawBuffer++;
+// 		BYTE_2 = *m_RawBuffer++;
+// 		BYTE_3 = *m_RawBuffer++;
+// 		WORD Y0 = (BYTE_1 << 4) | ((BYTE_2 & 0xF0)>>4);
+// 		WORD Y1 = (BYTE_3 << 4) | (BYTE_2 & 0x0F);
+// 
+// 		pNewFrameBuffer[inddd] = Y0;
+// 		inddd++;
+// 		pNewFrameBuffer[inddd] = Y1;
+// 		inddd++;
+// 	}
+// 	g_tFrameHead.uBytes = g_W_H_INFO.sensor_height*g_W_H_INFO.sensor_width * 2;
+// 	CameraSaveImage(g_hCamera, (char*)"./raw16rgb.raw", (BYTE*)pNewFrameBuffer, &g_tFrameHead, FILE_RAW_16BIT, 100);
+// 	CameraAlignFree((BYTE*)pNewFrameBuffer);
+	outputarray.clear();
+
+	int Size_byte = img_width * img_height;
+	for (int i = 0; i < Size_byte / 2; ++i)
+	{
+		int a0 = inputbyte[i * 3];
+
+		int a1 = inputbyte[i * 3 + 1];
+
+		int a2 = inputbyte[i * 3 + 2];
+
+
+		int raw1 = (a0 << 4) | (a1 & 0xf);
+
+		int raw2 = (a2 << 4) | ((a1 & 0xf0) >> 4);
+
+		outputarray.push_back(raw1);
+		outputarray.push_back(raw2);
+	}
+
+
+	return 0;
+}
+
+int CameraDataProcess::rawChangetoMat(unsigned char* inputbyte, int img_width, int img_height, cv::Mat& outputimg)
+{
+	vector<int> outputarray;
+	int Size_byte = img_width * img_height;
+	for (int i = 0; i < Size_byte / 2; ++i)
+	{
+		int a0 = inputbyte[i * 3];
+
+		int a1 = inputbyte[i * 3 + 1];
+
+		int a2 = inputbyte[i * 3 + 2];
+
+
+		int raw1 = (a0 << 4) | (a1 & 0xf);
+
+		int raw2 = (a2 << 4) | ((a1 & 0xf0) >> 4);
+
+		outputarray.push_back(raw1);
+		outputarray.push_back(raw2);
+	}
+
+	// 更改矩阵大小为n行
+	
+	cv::Mat tmp = cv::Mat(outputarray);
+	tmp = tmp.reshape(0, img_height);
+	outputimg = tmp.clone();
+	return 0;
+}
+
+int CameraDataProcess::intChangetoRoiInt(int img_width, int img_height, QVector<int>& v_12int, QRect roi, QVector<int>& v_12int_roi)
+{
+	//每次进入函数先清空，防止多次调用导致数据错误
+	v_12int_roi.clear();
+
+	int x = roi.x();
+	int y = roi.y();
+	int w = roi.width();
+	int h = roi.height();
+
+	//防止越界处理
+	if ((x < 0) || (y < 0) || (w < 0) || (h < 0))
+	{
+		return -1;
+	}
+	if ((w > img_width) || (h > img_height))
+	{
+		return -1;
+	}
+
+	//(x,y)--(x+w,y)
+	int j_start = x + y * img_width;
+	int j_end = x + w + y * img_width;
+	for (int i = y; i < y + h; ++i)
+	{
+		for (int j = x + i * img_width; j < x + w + i * img_width; ++j)
+		{
+			int tmp = v_12int[j];
+			v_12int_roi.push_back(tmp);
+		}
+	}
+
+	return 0;
+}
+
+int CameraDataProcess::mydivisionadd(QVector<int>& v_molecule, QVector<int>& v_denominator, QVector<int>& v_add)
+{
+	//将两个vector相除累加
+	if (v_molecule.size() != v_denominator.size())
+	{
+		return -1;
+	}
+	if (v_molecule.size() != v_add.size())
+	{
+		return -1;
+	}
+	else
+	{
+
+		for (int i = 0; i < v_molecule.size(); ++i)
+		{
+			double i_tmp = 0;
+			double i_openwave = (double)v_molecule[i];
+			double i_closewave = (double)v_denominator[i];
+			//分母为0
+			if (i_closewave == 0)
+			{
+				i_tmp = 0;
+			}
+			else
+			{
+				i_tmp = (i_openwave) / (i_closewave) * 4096;
+			}
+			v_add[i] += (int)i_tmp;//int输出，做除法时，可能会为0
+		}
+
+	}//相除累加结束
+	return 0;
+}
+
+double CameraDataProcess::myaverage(QVector<int>& v_tmp)
+{
+	double  average = 0.0;
+	double sum = 0;
+
+	for (int i = 0; i < v_tmp.size(); ++i)
+	{
+		sum += v_tmp[i];
+	}
+
+	average = sum / v_tmp.size();
+
+	return average;
+}
+
+QImage CameraDataProcess::intChangetoQimg(int img_width, int img_height, QVector<int>& inputarray)
+{
+	unsigned char* c_uchar;
+	c_uchar = (unsigned char*)malloc(img_width * img_height);  //预先申请动态空间
+	for (int i = 0; i < inputarray.size(); i++)
+	{
+
+		int tmp =inputarray[i];
+		uchar utmp = (uchar)tmp;
+		c_uchar[i] = utmp;
+
+	}
+	QImage img;
+	img = QImage(c_uchar, img_width, img_height, QImage::Format_Indexed8);
+
+
+	//灰度图颜色表
+	QVector<QRgb> ColourTable;
+	for (int i = 0; i < 256; i++)
+	{
+		ColourTable.append(qRgb(i, i, i));
+	}
+
+	img.setColorTable(ColourTable);
+	return img;
+
+}
+
+QImage CameraDataProcess::intChangetoQcolorimg(int img_width, int img_height, const QVector<double>& magnetic_strength, double down, double up, QImage& image0)
+{
+	int w_pic = img_width;
+	int h_pic = img_height;
+	QVector<QRgb> rgbColourTable;
+	unsigned char* Buffer;		//磁场强度信息值，根据在上下限up，down中比例转换到0-255
+	Buffer = (unsigned char*)malloc(w_pic * h_pic);
+	QImage img = QImage(Buffer, w_pic, h_pic, QImage::Format_Indexed8);
+	if (w_pic * h_pic != magnetic_strength.size())
+	{
+		return img;
+	}
+	if (down >= up)
+	{
+		return img;
+	}
+
+	for (int i = 0; i < w_pic * h_pic; i++)
+	{
+		if (magnetic_strength[i] <= down)
+		{
+			Buffer[i] = (uchar)0;
+		}
+		if (magnetic_strength[i] >= up)
+		{
+			Buffer[i] = (uchar)255;
+		}
+		if ((magnetic_strength[i] < up) && (magnetic_strength[i] > down))
+		{
+			int tmp = (magnetic_strength[i] - down) / (up - down) * 255;
+			uchar utmp = (uchar)tmp;
+			Buffer[i] = utmp;
+		}
+
+	}
+
+	for (int y = 0; y < 256; y++)
+	{
+
+		QColor color;
+		int index = (int)((float)(y) / (float)(255) * (float)(image0.height() - 2));
+		if (index == 0)
+		{
+			color = image0.pixelColor(QPoint(1, 1));
+		}
+		else if (index == image0.height())
+		{
+			color = image0.pixelColor(QPoint(1, image0.height() - 2));
+		}
+		else
+		{
+
+			color = image0.pixelColor(QPoint(1, index));
+		}
+
+		QRgb rgb = color.rgb();
+		rgbColourTable.push_back(rgb);
+	}
+
+
+	img.setColorTable(rgbColourTable);
+	//img.save("image_mapping.png");
+	return img;
+}
+
+int CameraDataProcess::saveRawMat(int img_width, int img_height, unsigned char* Rawbuffer, string savepath)
+{
+	cv::Mat img;
+	img = cv::Mat(img_height, img_width / 2 * 3, CV_8UC1, Rawbuffer);
+	cv::imwrite(savepath, img);
+	return 0;
+
+}
+
+int CameraDataProcess::readRawMat(string imgpath, unsigned char* Rawbuff)
+{
+	cv::Mat image;   //创建一个空图像image
+	image = cv::imread(imgpath, cv::IMREAD_UNCHANGED);  //读取文件夹中的图像
+// 	QVector<unsigned char> raw_mat;
+// 	for (int i = 0; i < image.rows; i++)
+// 	{
+// 		uchar *ptr = image.ptr<uchar>(i);
+// 		for (int j = 0; j < image.cols; j++)
+// 		{
+// 			raw_mat.push_back(ptr[j]);
+// 
+// 		}
+// 	}
+	if (image.empty())
+	{
+		return -1;
+	}
+	//mat to char*
+	int nHeight = image.rows;
+	int nWidth = image.cols;
+	int nBytes = nHeight * nWidth;//图像总的字节
+
+
+	memcpy(Rawbuff, image.data, nBytes);//转化函数,注意Mat的data成员	
+
+	return 0;
+}
+
+int CameraDataProcess::read16Raw(string rawpath, int imgWidth, int imgHeight, QVector<ushort>& v_12int)
+{
+	// 读取raw10图片
+	std::string strFilename = rawpath;
+	int nWidth = imgWidth;
+	int nHeight = imgHeight;
+	ushort* pRaw16buf = new ushort[(size_t)nWidth * nHeight];
+	if (!pRaw16buf)
+	{
+		//std::cout << "ERROR: 开辟内存失败！" << std::endl;
+		return -1;
+	}
+	FILE* pfile = nullptr;
+	errno_t err_code = fopen_s(&pfile, strFilename.c_str(), "rb");
+	if (!pfile) {
+		//std::cout << "ERROR: 打开文件失败！" << std::endl;
+		return -1;
+	}
+	fread(pRaw16buf, sizeof(pRaw16buf[0]), (size_t)nWidth * nHeight, pfile);
+	fclose(pfile);
+	pfile = nullptr;
+
+
+	for (int i = 0; i < nWidth * nHeight; ++i)
+	{
+		v_12int.push_back(pRaw16buf[i] / 16);
+	}
+	delete pRaw16buf;
+	pRaw16buf = NULL;
+
+	return 0;
+}
+int CameraDataProcess::matToQVector(cv::Mat inputarray, QVector<double>& v_double)
+{
+	v_double.clear();
+	for (int i = 0; i < inputarray.rows; i++)
+	{
+		double* ptr = inputarray.ptr<double>(i); // 获取第i行数据的指针
+		for (int j = 0; j < inputarray.cols; j++) 
+		{
+			double value = ptr[j]; // 获取第i行j列像素点的值
+			v_double.push_back(value);
+		}
+	}
+	return 0;
+}

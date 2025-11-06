@@ -1,0 +1,131 @@
+#include "FixMeasureThread.h"
+#include <windows.h>
+#include "CameraApi.h"
+#include<QtConcurrent/qtconcurrentrun.h>
+
+extern int g_hCamera;                    //相机设备句柄
+extern unsigned char* g_pRawBuffer;     //raw数据
+extern unsigned char* g_pRgbBuffer;     //处理后数据缓存区
+extern unsigned char* g_readBuf;        //画板显示数据区
+extern tSdkFrameHead           g_tFrameHead;       //图像帧头信息
+extern tSdkCameraCapbility     g_tCapability;      //设备描述信息
+extern tSdkCameraDevInfo       tCameraEnumList[4];   //相机列表
+extern int g_iDataSize;
+extern int g_Width;
+extern int g_Height;
+extern double g_SweepFreStart;
+extern double g_SweepFreEnd;
+extern double g_SweepFreStep;
+extern double g_FixedFre;
+extern int g_IterationTime;
+extern bool isAutoSave;
+
+
+FixMeasureThread::FixMeasureThread(QObject* parent) :
+    QThread(parent)
+{
+    pause_status = true;
+    quit = false;
+    picNum = 0;
+    onMat.create(g_Height, g_Width, CV_64F);
+    offMat.create(g_Height, g_Width, CV_64F);
+    iterTime = 0;
+    qRegisterMetaType<cv::Mat>("cv::Mat");
+}
+
+void FixMeasureThread::run()
+{
+    iterTime = 0;
+    forever
+    {
+        if (!pause_status)
+        {
+            if (iterTime == g_IterationTime)
+            {
+               
+                emit stopFixMeasure();
+                break;
+            }
+               
+            if (quit)
+                break;
+            if (CameraGetImageBuffer(g_hCamera,&g_tFrameHead,&g_pRawBuffer,2000) == CAMERA_STATUS_SUCCESS)
+            {
+                unsigned char* rawBuffer;
+                rawBuffer = (unsigned char*)malloc(g_iDataSize * 1.5);                
+                memcpy(rawBuffer, g_pRawBuffer, g_iDataSize * 1.5);
+                CameraReleaseImageBuffer(g_hCamera, g_pRawBuffer);
+                
+                if (picNum == 0)
+                {
+                    if (isAutoSave)
+                    {
+                        CameraDataProcess::saveRawMat(g_Width, g_Height, rawBuffer, (savePath + "/" + "(on)" + QString::number(g_FixedFre) + ".png").toStdString());
+                    }
+                    CameraDataProcess::rawChangetoMat(rawBuffer, g_Width, g_Height, onMat); 
+					onMat.convertTo(onMat, CV_64F);
+
+					cv::Scalar onMean = cv::mean(onMat);
+					double onValue = onMean.val[0];
+					qDebug() << "ON::" << onValue;
+
+                    //qDebug() << iterTime << picNum;
+                    picNum++;
+                }
+                else
+                {
+                    if (isAutoSave)
+                    {
+                        CameraDataProcess::saveRawMat(g_Width, g_Height, rawBuffer, (savePath + "/" + "(off)" + QString::number(g_FixedFre) + ".png").toStdString());
+                    }
+                    CameraDataProcess::rawChangetoMat(rawBuffer, g_Width, g_Height, offMat);
+					offMat.convertTo(offMat, CV_64F);
+
+					cv::Scalar offMean = cv::mean(offMat);
+					double offValue = offMean.val[0];
+					qDebug() << "OFF::" << offValue;
+
+                    //qDebug() << iterTime << picNum;
+                    picNum = 0;
+                    cv::Mat resultMat(g_Height, g_Width, CV_64F);
+                    
+                    //resultMat = onMat / offMat * 255;
+					resultMat = onMat / offMat;
+                    emit GetMat(resultMat);
+                    iterTime++;
+                }
+                free(rawBuffer);
+                rawBuffer = NULL;
+            }
+            else
+            {
+                printf("timeout \n");
+                usleep(1000);
+            }
+        }
+        else
+            usleep(1000);
+        if (quit)
+            break;
+    }
+}
+
+void FixMeasureThread::stream()
+{
+    pause_status = false;
+}
+
+void FixMeasureThread::pause()
+{
+    pause_status = true;
+}
+
+void FixMeasureThread::stop()
+{
+    pause_status = false;
+    quit = true;
+}
+void FixMeasureThread::setSavePath(QString path)
+{
+    savePath = path;
+}

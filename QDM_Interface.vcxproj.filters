@@ -1,0 +1,211 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>qml;cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>qrc;rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Form Files">
+      <UniqueIdentifier>{99349809-55BA-4b9d-BF79-8FDBB0286EB3}</UniqueIdentifier>
+      <Extensions>ui</Extensions>
+    </Filter>
+    <Filter Include="Translation Files">
+      <UniqueIdentifier>{639EADAA-A684-42e4-A9AD-28FC9BCB8F7C}</UniqueIdentifier>
+      <Extensions>ts</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <QtRcc Include="QDM_Interface.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+    <QtUic Include="QDM_Interface.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtMoc Include="QDM_Interface.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClCompile Include="QDM_Interface.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <QtRcc Include="PulseGenerator.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="qcustomplot.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CameraDataProcess.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SweepMeasureThread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FixMeasureThread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="levmar-2.6\Axb.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="levmar-2.6\lm.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="levmar-2.6\misc.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FrameBase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MicrowaveSrcCtlNewProtocol.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ColorMapWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CtuCamCap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PulseSet.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CurrentSource.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MotorController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PulseControl.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="camera.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SaveThread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="radiusprogressbar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AnalysisRoi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MyGraphicsView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MVCamera.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MVCameraSweep.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MVCameraFix.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MVCamCapture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="qcustomplot.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="SweepMeasureThread.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="FixMeasureThread.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="MicrowaveSrcCtlNewProtocol.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="ColorMapWidget.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="CtuCamCap.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="PulseSet.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="CurrentSource.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="MotorController.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="radiusprogressbar.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="AnalysisRoi.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="MyGraphicsView.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="MVCameraSweep.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="MVCameraFix.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="MVCamCapture.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="CameraDataProcess.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FrameBase.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PulseControl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="camera.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SaveThread.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MVCamera.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <QtUic Include="ColorMapWidget.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="PulseSet.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="AnalysisRoi.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="QDM_Interface.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+</Project>
